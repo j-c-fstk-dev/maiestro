@@ -3,11 +3,13 @@ import { patternsFor } from '../presets/patterns';
 import { STYLES } from '../presets/styles';
 import { loopLength, positionAt } from '../song/time';
 import { LAYER_IDS, SCALES, SECTION_TYPES, type SongState } from '../song/types';
+import { other, type MixState } from '../song/mix';
+import { TRANSITIONS } from '../presets/transitions';
 import type { Entry } from '../scheduler/timeline';
 
 /** System prompt do maestro (v1). Gerado a partir do catálogo, então nunca fica desatualizado. */
 
-export const PROMPT_VERSION = 'v1';
+export const PROMPT_VERSION = 'v2';
 
 function catalog(): string {
   return LAYER_IDS.map((layer) => {
@@ -65,6 +67,20 @@ Planos são executados em ordem. Use vários planos para pedidos em etapas.
 - {"op":"set_arrangement","sections":[{"type":"intro","bars":16}, ...]}   troca o arranjo inteiro (raro)
 - {"op":"jump_to","section":"breakdown"}   pula para a próxima seção desse tipo do arranjo
 
+## Dois decks (como um DJ)
+Há dois decks, A e B, no mesmo relógio. Um está NO AR (é o que se ouve); o outro fica preparado em silêncio.
+- Toda op de deck aceita "deck":"A" ou "deck":"B". Sem "deck", vale o deck NO AR.
+  Para preparar a próxima música, mande as ops com "deck" = o deck que NÃO está no ar (não afeta o som até a transição).
+- {"op":"load_style","style":"<estilo>","deck":"B"}    carrega um estilo pronto no deck (estilos: ${STYLES.map((s) => s.id).join(', ')})
+- {"op":"copy_deck","from":"A","to":"B"}               copia o deck no ar para o outro (para preparar uma variação dele)
+- {"op":"transition","style":"<estilo>","bars":N,"enterAt":"<seção opcional>"}
+    passa a música para o outro deck ao longo de N compassos; o deck que entra começa do início do arranjo
+    (ou da seção "enterAt"); o BPM vai em rampa até o do deck que entra. Estilos de transição:
+${TRANSITIONS.map((t) => `    ${t.id} (${t.defaultBars} compassos): ${t.description}`).join('\n')}
+    Comece transições em "phrase" ou "section". Uma de cada vez.
+- "prepara a próxima música / outra música / um melodic techno no outro deck" → load_style + ajustes com deck do outro lado.
+- "faz a transição / passa pra outra / mixa" → transition (padrão filter_swap 32). "corta" → cut. "em eco" → echo_out.
+
 ## Camadas (ids fixos), instrumentos e padrões disponíveis
 ${catalog()}
 Use SOMENTE ids desta lista. Não existe guitarra, piano real nem voz gravada: a camada "vocal" é um coro
@@ -102,8 +118,25 @@ Estilos conhecidos (para referência de gosto): ${STYLES.map((s) => `${s.id}: ${
 Total de instrumentos: ${INSTRUMENTS.length}.`;
 }
 
-/** Descrição compacta do momento atual, enviada junto com cada pedido. */
-export function describeContext(state: SongState, now: number, playing: boolean, pending: Entry[]): string {
+/** Descrição compacta do momento atual (os dois decks), enviada junto com cada pedido. */
+export function describeContext(mix: MixState, now: number, playing: boolean, pending: Entry[]): string {
+  const live = mix.live;
+  const off = other(live);
+  const tr = mix.transition
+    ? `TRANSIÇÃO EM ANDAMENTO: ${mix.transition.style} de ${mix.transition.from} para ${mix.transition.to}, compassos ${mix.transition.start}–${mix.transition.start + mix.transition.bars}`
+    : 'nenhuma transição em andamento';
+  return `ESTADO ATUAL (${playing ? 'tocando' : 'parado'}) · compasso ${Math.floor(now)} · ${tr}
+
+DECK ${live} — NO AR
+${describeDeck(mix.decks[live], now, playing)}
+
+DECK ${off} — preparado (em silêncio até uma transição)
+${describeDeck(mix.decks[off], now, false)}
+
+já agendado: ${pending.length ? pending.map((e) => `c${e.cycle} ${e.label}`).join('; ') : 'nada'}`;
+}
+
+function describeDeck(state: SongState, now: number, playing: boolean): string {
   const pos = positionAt(state, playing ? now : 0);
   const arr = state.arrangement
     .map((s, i) => (i === pos.index ? `[${s.type}:${s.bars}]` : `${s.type}:${s.bars}`))
@@ -111,19 +144,19 @@ export function describeContext(state: SongState, now: number, playing: boolean,
   const layers = LAYER_IDS.map((id) => {
     const l = state.layers[id];
     if (!l) return `  ${id}: (vazia)`;
-    const extra = [l.muted ? 'MUDO' : '', pos.section.mute.includes(id) ? 'fora desta seção' : '', Object.keys(l.fx).length ? `fx ${JSON.stringify(l.fx)}` : '']
+    const extra = [l.muted ? 'MUDO' : '', playing && pos.section.mute.includes(id) ? 'fora desta seção' : '', Object.keys(l.fx).length ? `fx ${JSON.stringify(l.fx)}` : '']
       .filter(Boolean)
       .join(', ');
     return `  ${id}: ${l.instrument} · ${l.pattern} · ganho ${l.gain}${extra ? ` · ${extra}` : ''}`;
   }).join('\n');
   const bar = Math.floor(pos.barInSection) + 1;
   const left = pos.section.bars - Math.floor(pos.barInSection);
-  return `ESTADO ATUAL (${playing ? 'tocando' : 'parado'})
-estilo ${state.style} · ${state.bpm} BPM · tom ${state.key.root} ${state.key.scale} · escuridão ${state.mood.darkness} · energia ${state.mood.energy}
+  const position = playing
+    ? `posição: seção ${pos.section.type} (compasso ${bar} de ${pos.section.bars}, faltam ${left})\narranjo em loop (${loopLength(state.arrangement)} compassos, [atual]): ${arr}`
+    : `arranjo (${loopLength(state.arrangement)} compassos): ${state.arrangement.map((s) => `${s.type}:${s.bars}`).join(' ')}`;
+  return `estilo ${state.style} · ${state.bpm} BPM · tom ${state.key.root} ${state.key.scale} · escuridão ${state.mood.darkness} · energia ${state.mood.energy}
 master: filtro ${state.master.filter} · reverb ${state.master.reverb} · volume ${state.master.gain}
-posição: compasso ${Math.floor(now)}, seção ${pos.section.type} (compasso ${bar} de ${pos.section.bars}, faltam ${left})
-arranjo em loop (${loopLength(state.arrangement)} compassos, [atual]): ${arr}
+${position}
 camadas:
-${layers}
-já agendado: ${pending.length ? pending.map((e) => `c${e.cycle} ${e.label}`).join('; ') : 'nada'}`;
+${layers}`;
 }

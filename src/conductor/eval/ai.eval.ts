@@ -4,7 +4,7 @@ import { callLlm } from '../../../server/llmProxy';
 import { Conductor, type ChatFn } from '../conductor';
 import { Timeline } from '../../scheduler/timeline';
 import { FakeEngine } from '../../test/fakeEngine';
-import { STYLES } from '../../presets/styles';
+import { testMix } from '../../test/mix';
 import { PROMPT_VERSION } from '../prompt';
 import { CASES } from './cases';
 
@@ -23,9 +23,8 @@ describe(`maestro ${PROMPT_VERSION} · ${env.LLM_MODEL ?? 'glm-4.7-flash'}`, () 
   for (const c of CASES) {
     it(c.name, async () => {
       const engine = new FakeEngine();
-      let state = STYLES[0].build();
-      const tl = new Timeline(engine, state);
-      await tl.play(state);
+      const tl = new Timeline(engine, testMix());
+      await tl.play();
       for (const op of c.setup ?? []) await tl.schedule([op], { at: 'bar' }, 'setup');
       engine.cycle = 45;
       tl.tick();

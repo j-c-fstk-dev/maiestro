@@ -401,11 +401,24 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - As gravações ficam só na memória da aba (aviso ao fechar a aba; aviso a cada 10 min de gravação).
 - **Testado no navegador headless:** WAV e MP3 com sinal (RMS 0,24), MP3 decodificado pelo próprio Chromium com a duração certa; gravação longa de 5 min com mudanças no meio.
 
-### Fase 4 — Dois decks e transições
-- [ ] Deck B, mixer/crossfader, rampa de BPM.
-- [ ] 5 estilos de transição.
-- [ ] `prepare_deck` (IA monta o deck B a partir de uma descrição).
+### Fase 4 — Dois decks e transições ✅
+- [x] Deck B, mixer/crossfader, rampa de BPM.
+- [x] 5 estilos de transição.
+- [x] `prepare_deck` (IA monta o deck B a partir de uma descrição) — via `load_style` + ops com `deck`.
 - **Pronto quando:** dá pra ir de um techno pra um melodic techno com BPM diferente, comandado por texto, sem quebra.
+
+**Como ficou (2026-10-25):**
+- **Estado:** a fonte da verdade agora é `MixState = { decks: {A, B}, live, transition }` (`src/song/mix.ts`). Cada deck continua sendo um `SongState`.
+- **Ops:** toda op de deck aceita `deck` (sem ele: o deck no ar). A Timeline **fixa o deck no agendamento** (o "no ar" de quando a op foi pedida, não o de quando ela é reaplicada). Ops de mixagem: `transition`, `end_transition` (agendado sozinho no fim), `copy_deck`, `restore` (agora da mixagem inteira).
+- **Som:** sem transição, só o deck no ar é compilado (o outro não gasta CPU). Durante a transição, `stack(deckA, deckB)`, cada deck nos seus orbits (B = A + 10, para reverb/delay/DJ filter não brigarem) e com envelopes da transição em `postgain` (volume depois dos efeitos) e `djf` (filtro), via `maestroEnv` (pontos em ciclos absolutos).
+- **Transições** (`src/presets/transitions.ts`): `crossfade` (16c, potência constante), `filter_swap` (32c, o novo entra abafado e abre, o atual fica fino e some), `bass_swap` (32c, graves trocam de deck no meio), `echo_out` (16c, o atual some em eco/reverb, o novo entra na metade), `cut` (1c). O deck que entra começa do intro (ou de `enterAt`).
+- **Tempo:** um relógio só; na transição o BPM vai em rampa até o do deck que entra; no fim, fica exato no BPM dele.
+- **UI:** mixer com crossfader andando e botões de transição; os dois decks (no ar / preparado / entrando / saindo); o deck **selecionado** mostra as camadas e recebe os comandos (clique no título, `Tab` no prompt ou `/deck a|b`; o prompt mostra `A ›`/`B ›`). Ao fim da transição, a seleção acompanha o deck que entrou.
+- **Comandos:** `/load <estilo> [a|b]`, `/copy a b`, `/xfade [compassos] [estilo] [from:<seção>]` (padrão `@phrase`), `/deck a|b`, `/list transitions`.
+- **IA (prompt v2):** contexto com os dois decks; ops com `deck`, `load_style`, `copy_deck`, `transition`. +3 casos na avaliação (35 no total).
+- **Novo estilo:** `melodic` (melodic techno, 124 BPM, ré menor) — é o deck B padrão.
+- **Teste no navegador** (IA simulada): "prepara um melodic techno a 122 no outro deck e mixa com troca de graves" → B carregado no compasso 2, transição bass_swap 8–24, BPM 160 → 141 (meio) → 122, deck B no ar no fim, sem erros.
+- **Limitações:** não há pré-escuta (fone) do deck preparado — só uma saída de áudio; o crossfader não é arrastável à mão (só transições agendadas).
 
 ### Fase 5 — Autonomia
 - [ ] Autopilot com faixas de autonomia, contador de chamadas/custo.
@@ -472,6 +485,11 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 22 | 2026-10-25 | Gravação por AudioWorklet na saída master, PCM 16 bits na memória | Sem perdas, sem dependência; WAV direto; MP3 só quando pedir |
 | 23 | 2026-10-25 | MP3 com `@breezystack/lamejs` (LAME em JS, LGPL) num Web Worker | Sem WASM/servidor; não engasga a música. LGPL: rever na comercialização |
 | 24 | 2026-10-25 | Gravações só na memória da aba (por enquanto) | Simples; IndexedDB fica para quando precisar sobreviver a recarregar |
+| 25 | 2026-10-25 | `MixState` (dois decks) como fonte da verdade; ops de deck com `deck` opcional | Um modelo só para comandos, IA, desfazer e gravação |
+| 26 | 2026-10-25 | Deck fora do ar não é compilado | Economia de CPU; ele só existe no som durante transições |
+| 27 | 2026-10-25 | Transições como envelopes em `postgain`/`djf` e orbits separados por deck | Não mexe nos ganhos/filtros das camadas; decks não brigam por efeito |
+| 28 | 2026-10-25 | `bass_swap` no lugar do `breakdown_drop` previsto | Troca de graves é a transição de DJ mais comum; breakdown/drop já dá com insert_sections + enterAt |
+| 29 | 2026-10-25 | Crossfader só por transições agendadas (sem arrastar) | Mudanças entram por limites musicais; arrastar exigiria trocas fora do compasso |
 
 ---
 

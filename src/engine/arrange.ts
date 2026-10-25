@@ -52,6 +52,24 @@ export function maestroRamp(anchor: number, loop: number, start: number, bars: n
   });
 }
 
+/**
+ * Envelope em ciclos absolutos: pontos [ciclo, valor], interpolação linear,
+ * constante antes do primeiro e depois do último (transições entre decks).
+ */
+export function maestroEnv(points: [number, number][]): any {
+  return signal((t: number) => {
+    if (t <= points[0][0]) return points[0][1];
+    for (let i = 1; i < points.length; i++) {
+      const [x1, y1] = points[i];
+      if (t <= x1) {
+        const [x0, y0] = points[i - 1];
+        return x1 === x0 ? y1 : y0 + ((y1 - y0) * (t - x0)) / (x1 - x0);
+      }
+    }
+    return points[points.length - 1][1];
+  });
+}
+
 export function installArrangeHelpers(scope: Record<string, unknown> = globalThis as any) {
-  Object.assign(scope, { maestroArrange, maestroRamp });
+  Object.assign(scope, { maestroArrange, maestroRamp, maestroEnv });
 }

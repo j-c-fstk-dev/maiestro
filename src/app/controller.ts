@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { StrudelEngine } from '../engine/strudelEngine';
 import { Timeline, type TimelineSnapshot } from '../scheduler/timeline';
-import { STYLES, STYLES_BY_ID } from '../presets/styles';
+import { STYLES_BY_ID } from '../presets/styles';
 import { CommandError, HELP, parseCommand } from '../commands/parse';
 import { OpError } from '../song/ops';
 import type { LayerId } from '../song/types';
+import { createMix, liveDeck, type DeckId } from '../song/mix';
 import { Conductor, ConductorError } from '../conductor/conductor';
 import { chat } from '../conductor/llmClient';
 import { Recorder } from '../recorder/recorder';
@@ -30,6 +31,8 @@ interface UiState {
   loading: boolean;
   /** pedido que o maestro está processando */
   thinking: string | null;
+  /** deck que os comandos e cliques editam */
+  target: DeckId;
   /** gravação em andamento */
   rec: { seconds: number; bytes: number; peak: number } | null;
   recordings: Recording[];
@@ -53,7 +56,7 @@ export const engine = new StrudelEngine({
   onError: (err) => log(`erro no código (a música continua): ${err.message}`, 'err'),
 });
 
-export const timeline = new Timeline(engine, STYLES[0].build(), {
+export const timeline = new Timeline(engine, createMix(STYLES_BY_ID.techno.build(), STYLES_BY_ID.melodic.build()), {
   onError: (msg) => log(msg, 'err'),
   onApplied: (e) => {
     log(`▸ ${e.label}`, 'ai');
@@ -67,13 +70,20 @@ export const useUi = create<UiState>(() => ({
   showCode: false,
   loading: false,
   thinking: null,
+  target: 'A',
   rec: null,
   recordings: [],
 }));
 
 export const conductor = new Conductor(timeline, chat);
 
-timeline.subscribe((snap) => useUi.setState({ snap }));
+// quando o deck no ar muda (fim de transição), a seleção acompanha se estava no deck que saiu
+timeline.subscribe((snap) =>
+  useUi.setState((s) => ({
+    snap,
+    target: s.snap.state.live !== snap.state.live && s.target === s.snap.state.live ? snap.state.live : s.target,
+  })),
+);
 setInterval(() => timeline.tick(), 50);
 
 export function log(text: string, kind: LogKind = 'info') {
@@ -86,9 +96,11 @@ export async function play(styleId?: string) {
   const style = styleId ? STYLES_BY_ID[styleId] : undefined;
   useUi.setState({ loading: true });
   try {
-    await timeline.play(style ? style.build() : timeline.state);
+    const mix = timeline.state;
+    await timeline.play(style ? { ...mix, decks: { ...mix.decks, [mix.live]: style.build() } } : mix);
     session({ type: 'transport', action: 'play', state: timeline.state });
-    log(`▶ ${timeline.state.name} · ${timeline.state.bpm} BPM · ${timeline.state.key.root} ${timeline.state.key.scale}`, 'ok');
+    const d = liveDeck(timeline.state);
+    log(`▶ deck ${timeline.state.live}: ${d.name} · ${d.bpm} BPM · ${d.key.root} ${d.key.scale}`, 'ok');
   } finally {
     useUi.setState({ loading: false });
   }
@@ -111,21 +123,25 @@ export function panic() {
   log(n ? `pânico: ${n} mudança(s) agendada(s) cancelada(s)` : 'pânico: nada agendado', 'warn');
 }
 
-/** Carrega um estilo no deck parado (para ajustar antes de tocar). */
+/** Carrega um estilo no deck selecionado. */
 export function loadStyle(styleId: string) {
-  const style = STYLES_BY_ID[styleId];
-  if (!style) return;
-  if (engine.isPlaying) {
-    void run(`/style ${styleId}`);
-    return;
-  }
-  void timeline.schedule([{ op: 'load', state: style.build() }], { at: 'bar' }, `estilo ${styleId}`);
-  log(`deck carregado: ${style.label} — ${style.description}`);
+  void run(`/load ${styleId} ${useUi.getState().target.toLowerCase()}`);
 }
 
-export function toggleMute(layer: LayerId) {
-  const l = timeline.stateAt(Infinity).layers[layer];
+export function setTarget(deck: DeckId) {
+  if (useUi.getState().target === deck) return;
+  useUi.setState({ target: deck });
+  log(`editando o deck ${deck}${deck === timeline.state.live ? ' (no ar)' : ' (preparado)'}`);
+}
+
+export function toggleTarget() {
+  setTarget(useUi.getState().target === 'A' ? 'B' : 'A');
+}
+
+export function toggleMute(layer: LayerId, deck: DeckId = useUi.getState().target) {
+  const l = timeline.stateAt(Infinity).decks[deck].layers[layer];
   if (!l) return;
+  setTarget(deck);
   void run(`/${l.muted ? 'unmute' : 'mute'} ${layer}`);
 }
 
@@ -137,7 +153,7 @@ export async function run(input: string) {
   if (text.startsWith('/') && !/^\/rec(ord)?\b/.test(text)) session({ type: 'command', text });
   try {
     // comandos usam o estado mais recente (incluindo o que já está agendado)
-    const cmd = parseCommand(text, timeline.stateAt(Infinity));
+    const cmd = parseCommand(text, timeline.stateAt(Infinity), useUi.getState().target);
     switch (cmd.kind) {
       case 'natural':
         return ask(cmd.text);
@@ -145,6 +161,8 @@ export async function run(input: string) {
         return undo();
       case 'rec':
         return toggleRecording();
+      case 'target':
+        return setTarget(cmd.deck);
       case 'info':
         log(cmd.text);
         return;
@@ -256,7 +274,7 @@ async function stopRecording() {
   const stamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '');
   const rec: Recording = {
     id: ++recId,
-    name: `maestro-${stamp}-${timeline.state.style}`,
+    name: `maestro-${stamp}-${liveDeck(timeline.state).style}`,
     seconds: buffer.seconds,
     pcm: buffer.toData(),
     session: log_.toFile(buffer.seconds, buffer.sampleRate),

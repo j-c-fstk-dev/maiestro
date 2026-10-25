@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { positionAt } from './time';
 import { section } from '../presets/sections';
-import { applyOp } from './ops';
+import { applyDeckOp as applyOp } from './ops';
 import { STYLES } from '../presets/styles';
 
 const arr = { arrangement: [section('intro', 16), section('build', 8), section('drop', 16)], anchor: 0 };

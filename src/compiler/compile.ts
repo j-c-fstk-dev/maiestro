@@ -2,19 +2,23 @@ import { INSTRUMENTS_BY_ID, type Instrument } from '../presets/instruments';
 import { PATTERNS_BY_ID } from '../presets/patterns';
 import { LAYER_IDS, type Layer, type LayerId, type Section, type SongState } from '../song/types';
 import { loopLength, sectionStarts } from '../song/time';
+import { audibleDecks, type DeckId, type MixState } from '../song/mix';
+import { TRANSITIONS_BY_ID, type Env } from '../presets/transitions';
 
 /**
- * SongState → código Strudel. Função pura.
+ * MixState → código Strudel. Função pura.
  *
- * Forma do código gerado:
+ * Forma do código de um deck:
  *   maestroArrange(ANCHOR, [
  *     [BARS, stack(camada, camada, ...).djf(FILTRO)],   // uma entrada por seção
  *     ...
  *   ])
- * maestroArrange/maestroRamp vêm de src/engine/arrange.ts.
+ * Com dois decks soando (transição): stack(deckA.postgain(env).djf(env), deckB…).
+ * maestroArrange/maestroRamp/maestroEnv vêm de src/engine/arrange.ts.
  */
 
-/** cada grupo de camadas num "orbit" próprio do Strudel, para reverb/delay não brigarem */
+/** cada grupo de camadas num "orbit" próprio do Strudel, para reverb/delay não brigarem;
+ *  o deck B usa os mesmos números + 10 */
 const ORBITS: Record<LayerId, number> = { kick: 1, clap: 1, hats: 1, perc: 1, bass: 2, chords: 3, lead: 4, vocal: 6, fx: 5 };
 const DRUMS: LayerId[] = ['kick', 'clap', 'hats', 'perc'];
 const MELODIC: LayerId[] = ['bass', 'chords', 'lead', 'vocal'];
@@ -26,7 +30,9 @@ const num = (n: number) => String(Math.round(n * 1000) / 1000);
 
 export class CompileError extends Error {}
 
-export function compileLayer(state: SongState, id: LayerId, layer: Layer, rise?: RiseCtx): string {
+const ORBIT_OFFSET: Record<DeckId, number> = { A: 0, B: 10 };
+
+export function compileLayer(state: SongState, id: LayerId, layer: Layer, rise?: RiseCtx, orbitOffset = 0): string {
   const inst: Instrument | undefined = INSTRUMENTS_BY_ID[layer.instrument];
   const pattern = PATTERNS_BY_ID[layer.pattern];
   if (!inst) throw new CompileError(`instrumento desconhecido: ${layer.instrument}`);
@@ -70,7 +76,7 @@ export function compileLayer(state: SongState, id: LayerId, layer: Layer, rise?:
   } else {
     parts.push(`.gain(${num(gain)})`);
   }
-  parts.push(`.orbit(${ORBITS[id]})`);
+  parts.push(`.orbit(${ORBITS[id] + orbitOffset})`);
   return parts.join('');
 }
 
@@ -92,13 +98,13 @@ export function activeLayers(state: SongState, section: Section): LayerId[] {
   });
 }
 
-export function compileSection(state: SongState, index: number): string {
+export function compileSection(state: SongState, index: number, orbitOffset = 0): string {
   const section = state.arrangement[index];
   const rise: RiseCtx | undefined = section.rise
     ? { anchor: state.anchor, loop: loopLength(state.arrangement), start: sectionStarts(state.arrangement)[index], bars: section.bars }
     : undefined;
 
-  const layers = activeLayers(state, section).map((id) => compileLayer(state, id, state.layers[id]!, rise));
+  const layers = activeLayers(state, section).map((id) => compileLayer(state, id, state.layers[id]!, rise, orbitOffset));
   if (layers.length === 0) return 'silence';
 
   // filtro master (DJ filter é por orbit: aplicamos em todas as camadas, sempre, para resetar)
@@ -107,9 +113,31 @@ export function compileSection(state: SongState, index: number): string {
   return `stack(\n    ${layers.join(',\n    ')}\n  ).djf(${djf})`;
 }
 
-export function compile(state: SongState): string {
-  const sections = state.arrangement.map((s, i) => `  [${s.bars}, ${compileSection(state, i)}]`);
+/** Um deck sozinho. */
+export function compileDeck(state: SongState, orbitOffset = 0): string {
+  const sections = state.arrangement.map((s, i) => `  [${s.bars}, ${compileSection(state, i, orbitOffset)}]`);
   return `maestroArrange(${state.anchor}, [\n${sections.join(',\n')}\n])`;
+}
+
+/** A mixagem: o deck no ar ou, durante uma transição, os dois com os envelopes da transição. */
+export function compile(mix: MixState): string {
+  const t = mix.transition;
+  const decks = audibleDecks(mix);
+  if (!t) return compileDeck(mix.decks[mix.live], ORBIT_OFFSET[mix.live]);
+
+  const def = TRANSITIONS_BY_ID[t.style];
+  const abs = (env: Env) => `maestroEnv([${env.map(([x, v]) => `[${num(t.start + x * t.bars)}, ${num(v)}]`).join(', ')}])`;
+  const parts = decks.map((id) => {
+    const envs = id === t.from ? def.out : def.in;
+    let code = compileDeck(mix.decks[id], ORBIT_OFFSET[id]);
+    code += `.postgain(${abs(envs.gain)})`;
+    // filtro da transição substitui o do deck enquanto ela dura
+    if (envs.filter) code += `.djf(${abs(envs.filter)})`;
+    if (envs.room) code += `.room(${abs(envs.room)}).size(0.9)`;
+    if (envs.delay) code += `.delay(${abs(envs.delay)}).delaytime(${num((3 / 16) * (240 / mix.decks[id].bpm))}).delayfeedback(0.7)`;
+    return code;
+  });
+  return `stack(\n${parts.join(',\n')}\n)`;
 }
 
 function stripUndefined<T extends object>(o: T): Record<string, number> {

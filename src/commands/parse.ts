@@ -2,7 +2,9 @@ import { INSTRUMENTS_BY_ID, instrumentsFor } from '../presets/instruments';
 import { PATTERNS_BY_ID, patternsFor } from '../presets/patterns';
 import { parseArrangement } from '../presets/sections';
 import { STYLES_BY_ID } from '../presets/styles';
-import type { Op } from '../song/ops';
+import { isDeckOp, type Op } from '../song/ops';
+import { DECK_IDS, TRANSITION_STYLES, other, type DeckId, type MixState, type TransitionStyle } from '../song/mix';
+import { TRANSITIONS, TRANSITIONS_BY_ID } from '../presets/transitions';
 import type { When } from '../song/time';
 import {
   LAYER_IDS,
@@ -26,6 +28,7 @@ export type Command =
   | { kind: 'panic' }
   | { kind: 'undo' }
   | { kind: 'rec' }
+  | { kind: 'target'; deck: DeckId }
   | { kind: 'code' }
   | { kind: 'clear' }
   | { kind: 'info'; text: string }
@@ -38,7 +41,7 @@ const FX_PARAMS = ['lpf', 'hpf', 'room', 'delay', 'pan', 'distort'] as const;
 export const HELP = `comandos (sufixo opcional @bar @phrase @section @<seção>, ex.: /key F minor @drop)
   /play [estilo]            tocar (techno, house, trance, ambient)
   /stop                     parar
-  /style <estilo>           trocar de estilo (padrão @section)
+  /style <estilo>           trocar o estilo do deck selecionado (padrão @section)
   /bpm <n> [rampa]          ex.: /bpm 132 8  (rampa em compassos)
   /key <nota> [escala]      ex.: /key F# minor · escalas: ${SCALES.join(', ')}
   /mute <camada> [compassos]   /unmute <camada>
@@ -52,13 +55,20 @@ export const HELP = `comandos (sufixo opcional @bar @phrase @section @<seção>,
   /arr intro:16 build:8 drop:32   novo arranjo (padrão @section)
   /insert build:8 drop:16   toca essas seções uma vez e volta ao arranjo (padrão @section)
   /goto <seção>             pular para a próxima seção desse tipo (padrão @phrase)
-  /list styles | layers | patterns <camada> | insts <camada>
+  /list styles | layers | transitions | patterns <camada> | insts <camada>
+dois decks: os comandos valem para o deck selecionado (Tab ou /deck a|b troca)
+  /deck a|b                 selecionar o deck que os comandos editam
+  /load <estilo> [a|b]      carregar um estilo no deck (padrão: o que não está no ar)
+  /copy a b                 copiar um deck para o outro
+  /xfade [compassos] [estilo] [from:<seção>]   transição para o outro deck (padrão @phrase)
+      estilos: ${TRANSITION_STYLES.join(', ')} · ex.: /xfade 32 bass_swap · /xfade cut @drop
   /undo (ou Ctrl+Z)  desfaz o último comando/pedido · /panic (ou Esc) cancela tudo que está agendado
   /rec   começa/para a gravação (baixe WAV, MP3 e o registro da sessão no painel "gravações")
   /code  mostra o código Strudel   ·   /clear  limpa o log
 camadas: ${LAYER_IDS.join(', ')} · seções: ${SECTION_TYPES.join(', ')}`;
 
-export function parseCommand(input: string, state: SongState): Command {
+export function parseCommand(input: string, mix: MixState, target: DeckId = mix.live): Command {
+  const state = mix.decks[target];
   const text = input.trim();
   if (!text) throw new CommandError('vazio');
   if (!text.startsWith('/')) return { kind: 'natural', text };
@@ -71,7 +81,13 @@ export function parseCommand(input: string, state: SongState): Command {
     tokens = tokens.slice(0, -1);
   }
   const [cmd, ...args] = tokens;
-  const ops = (o: Op[], defaultWhen: When, label: string): Command => ({ kind: 'ops', ops: o, when: when ?? defaultWhen, label });
+  // ops de deck vão para o deck selecionado (a não ser que já digam qual)
+  const ops = (o: Op[], defaultWhen: When, label: string): Command => ({
+    kind: 'ops',
+    ops: o.map((op) => (isDeckOp(op) ? { ...op, deck: op.deck ?? target } : op)),
+    when: when ?? defaultWhen,
+    label: target === mix.live ? label : `[${target}] ${label}`,
+  });
 
   switch (cmd.toLowerCase()) {
     case 'help':
@@ -98,7 +114,39 @@ export function parseCommand(input: string, state: SongState): Command {
     case 'style': {
       const style = STYLES_BY_ID[args[0]];
       if (!style) throw new CommandError(`estilo desconhecido: ${args[0] ?? ''} (${Object.keys(STYLES_BY_ID).join(', ')})`);
-      return ops([{ op: 'load', state: style.build() }, { op: 'set_bpm', bpm: style.build().bpm }], { at: 'section' }, `estilo ${style.id}`);
+      return ops([{ op: 'load', state: style.build() }], { at: target === mix.live ? 'section' : 'bar' }, `estilo ${style.id}`);
+    }
+    case 'deck':
+      return { kind: 'target', deck: deckArg(args[0]) };
+    case 'load': {
+      const style = STYLES_BY_ID[args[0]];
+      if (!style) throw new CommandError(`estilo desconhecido: ${args[0] ?? ''} (${Object.keys(STYLES_BY_ID).join(', ')})`);
+      const d = args[1] ? deckArg(args[1]) : other(mix.live);
+      const c = ops([{ op: 'load', state: style.build(), deck: d }], { at: d === mix.live ? 'section' : 'bar' }, `deck ${d} ← ${style.label}`);
+      return { ...c, label: `deck ${d} ← ${style.label}` } as Command;
+    }
+    case 'copy': {
+      const from = deckArg(args[0]);
+      const to = deckArg(args[1] ?? other(from));
+      return ops([{ op: 'copy_deck', from, to }], { at: 'bar' }, `copiar deck ${from} → ${to}`);
+    }
+    case 'xfade':
+    case 'transition': {
+      if (mix.transition) throw new CommandError('já existe uma transição em andamento');
+      let bars: number | undefined;
+      let style: TransitionStyle = 'filter_swap';
+      let enterAt: SectionType | undefined;
+      for (const a of args) {
+        if (/^\d+$/.test(a)) bars = Math.round(number(a, 1, 128, 'compassos'));
+        else if ((TRANSITION_STYLES as readonly string[]).includes(a)) style = a as TransitionStyle;
+        else if (a.startsWith('from:')) enterAt = sectionType(a.slice(5));
+        else if (/^[ab]$/i.test(a)) {
+          if (deckArg(a) === mix.live) throw new CommandError(`o deck ${deckArg(a)} já está no ar`);
+        } else throw new CommandError(`não entendi "${a}" (use /xfade [compassos] [${TRANSITION_STYLES.join('|')}] [from:<seção>])`);
+      }
+      bars ??= TRANSITIONS_BY_ID[style].defaultBars;
+      const to = other(mix.live);
+      return ops([{ op: 'transition', to, bars, style, enterAt }], { at: 'phrase' }, `transição ${style} ${mix.live}→${to} (${bars}c)`);
     }
     case 'bpm': {
       const bpm = number(args[0], 60, 200, 'BPM');
@@ -217,8 +265,15 @@ function list(args: string[], state: SongState): string {
   if (what === 'styles') return Object.values(STYLES_BY_ID).map((s) => `${s.id.padEnd(9)} ${s.description}`).join('\n');
   if (what === 'layers') return LAYER_IDS.map((id) => `${id.padEnd(7)} ${state.layers[id] ? `${state.layers[id]!.instrument} · ${state.layers[id]!.pattern}` : '—'}`).join('\n');
   if (what === 'patterns') return patternsFor(layerId(l)).map((p) => `${p.id.padEnd(15)} ${p.label}`).join('\n');
+  if (what === 'transitions') return TRANSITIONS.map((t) => `${t.id.padEnd(12)} ${String(t.defaultBars).padStart(2)}c  ${t.description}`).join('\n');
   if (what === 'insts') return instrumentsFor(layerId(l)).map((i) => `${i.id.padEnd(12)} ${i.label}`).join('\n');
-  throw new CommandError('use /list styles | layers | patterns <camada> | insts <camada>');
+  throw new CommandError('use /list styles | layers | transitions | patterns <camada> | insts <camada>');
+}
+
+function deckArg(s: string | undefined): DeckId {
+  const d = DECK_IDS.find((x) => x === s?.toUpperCase());
+  if (!d) throw new CommandError(`deck inválido: ${s ?? ''} (a ou b)`);
+  return d;
 }
 
 function layerId(s: string | undefined): LayerId {

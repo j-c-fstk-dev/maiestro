@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { Timeline } from './timeline';
 import { FakeEngine } from '../test/fakeEngine';
 import { STYLES } from '../presets/styles';
+import { testMix } from '../test/mix';
 import { OpError } from '../song/ops';
 
 const setup = async () => {
   const engine = new FakeEngine();
   const errors: string[] = [];
-  const tl = new Timeline(engine, STYLES[0].build(), { onError: (m) => errors.push(m) });
+  const tl = new Timeline(engine, testMix(), { onError: (m) => errors.push(m) });
   await tl.play();
   return { engine, tl, errors };
 };
@@ -19,10 +20,10 @@ describe('Timeline', () => {
     const c = await tl.schedule([{ op: 'mute', layer: 'kick' }], { at: 'bar' }, 'mute kick');
     expect(c).toBe(3);
     expect(engine.scheduled.map((s) => s.cycle)).toEqual([3]);
-    expect(tl.state.layers.kick!.muted).toBe(false);
+    expect(tl.state.decks.A.layers.kick!.muted).toBe(false);
     engine.cycle = 3.01;
     tl.tick();
-    expect(tl.state.layers.kick!.muted).toBe(true);
+    expect(tl.state.decks.A.layers.kick!.muted).toBe(true);
   });
 
   it('mudança agendada antes de outra recompila a posterior', async () => {
@@ -74,9 +75,9 @@ describe('Timeline', () => {
 
   it('parado: comandos editam o rascunho direto', async () => {
     const engine = new FakeEngine();
-    const tl = new Timeline(engine, STYLES[0].build());
+    const tl = new Timeline(engine, testMix());
     await tl.schedule([{ op: 'set_gain', layer: 'bass', gain: 0.3 }], { at: 'bar' }, 'g');
-    expect(tl.state.layers.bass!.gain).toBe(0.3);
+    expect(tl.state.decks.A.layers.bass!.gain).toBe(0.3);
     expect(engine.scheduled).toEqual([]);
   });
 });
@@ -103,7 +104,7 @@ describe('Timeline — Fase 2', () => {
     // o "próximo drop" agora é o inserido, não o do arranjo original
     expect(tl.resolve({ at: 'section_type', type: 'drop' })).toBe(24);
     const types = (cycle: number) => {
-      const s = tl.stateAt(cycle);
+      const s = tl.stateAt(cycle).decks.A;
       const idx = s.arrangement.findIndex((_, i) => {
         const start = s.arrangement.slice(0, i).reduce((a, x) => a + x.bars, 0) + s.anchor;
         return cycle >= start && cycle < start + s.arrangement[i].bars;
@@ -114,15 +115,15 @@ describe('Timeline — Fase 2', () => {
     expect(types(24)).toBe('drop');
     // depois das seções inseridas, volta ao que viria no compasso 16 do original (verse)
     expect(types(40)).toBe('verse');
-    expect(tl.stateAt(40).arrangement.length).toBe(STYLES[0].build().arrangement.length);
+    expect(tl.stateAt(40).decks.A.arrangement.length).toBe(STYLES[0].build().arrangement.length);
   });
 
   it('revertAfterBars desfaz sozinho', async () => {
     const { engine, tl } = await setup();
     await tl.schedule([{ op: 'mute', layer: 'kick' }, { op: 'set_mood', darkness: 0.9 }], { at: 'bar' }, 'x', { revertAfterBars: 8 });
-    expect(tl.stateAt(1).layers.kick!.muted).toBe(true);
-    expect(tl.stateAt(9).layers.kick!.muted).toBe(false);
-    expect(tl.stateAt(9).mood.darkness).toBe(0.4);
+    expect(tl.stateAt(1).decks.A.layers.kick!.muted).toBe(true);
+    expect(tl.stateAt(9).decks.A.layers.kick!.muted).toBe(false);
+    expect(tl.stateAt(9).decks.A.mood.darkness).toBe(0.4);
     expect(engine.scheduled.map((s) => s.cycle).sort((a, b) => a - b)).toEqual([1, 9]);
   });
 
@@ -135,11 +136,11 @@ describe('Timeline — Fase 2', () => {
 
     engine.cycle = 1.5;
     tl.tick();
-    expect(tl.state.layers.bass!.muted).toBe(true);
+    expect(tl.state.decks.A.layers.bass!.muted).toBe(true);
     expect(await tl.undo()).toMatch(/desfazendo: a/);
     engine.cycle = 2.1;
     tl.tick();
-    expect(tl.state.layers.bass!.muted).toBe(false);
+    expect(tl.state.decks.A.layers.bass!.muted).toBe(false);
   });
 
   it('cancelGroup remove o grupo e reagenda o resto', async () => {
@@ -151,5 +152,63 @@ describe('Timeline — Fase 2', () => {
     expect(tl.snapshot().pending.map((e) => e.label)).toEqual(['b']);
     expect(engine.scheduled.map((s) => s.cycle)).toEqual([8]);
     expect(engine.scheduled[0].code).not.toContain('reese'); // b ainda muta só o lead; o bass voltou
+  });
+});
+
+describe('Timeline — dois decks', () => {
+  it('transição: B entra, BPM vai em rampa de 128 a 124 e no fim B fica no ar', async () => {
+    const { engine, tl } = await setup();
+    engine.cycle = 3.2;
+    const c = await tl.schedule([{ op: 'transition', bars: 16, style: 'filter_swap' }], { at: 'phrase' }, 'xfade');
+    expect(c).toBe(8);
+    expect(tl.snapshot().pending.map((e) => [e.cycle, e.ops[0].op])).toEqual([
+      [8, 'transition'],
+      [24, 'end_transition'],
+    ]);
+    engine.cycle = 8.05;
+    tl.tick();
+    expect(tl.state.transition?.to).toBe('B');
+    engine.cycle = 16;
+    tl.tick();
+    expect(engine.bpm).toBeCloseTo(126);
+    engine.cycle = 24.05;
+    tl.tick();
+    expect(tl.state.live).toBe('B');
+    expect(tl.state.transition).toBeNull();
+    expect(engine.bpm).toBe(124);
+    // o código no fim só tem o deck B (orbits 11+)
+    const last = engine.scheduled.find((s) => s.cycle === 24)!.code;
+    expect(last).not.toMatch(/\.orbit\([1-6]\)/);
+  });
+
+  it('ops no deck preparado não mudam o som do deck no ar, e valem quando ele entra', async () => {
+    const { engine, tl } = await setup();
+    await tl.schedule([{ op: 'set_key', key: { root: 'E', scale: 'minor' }, deck: 'B' }], { at: 'bar' }, 'B em mi');
+    expect(engine.scheduled[0].code).not.toContain('E1:minor');
+    expect(tl.stateAt(2).decks.B.key.root).toBe('E');
+    await tl.schedule([{ op: 'transition', bars: 8, style: 'crossfade' }], { at: 'phrase' }, 'x');
+    expect(engine.scheduled.find((s) => s.cycle === 8)!.code).toContain('E1:minor');
+  });
+
+  it('ops sem deck valem para o deck no ar naquele momento (fixadas no agendamento)', async () => {
+    const { tl } = await setup();
+    await tl.schedule([{ op: 'mute', layer: 'kick' }], { at: 'bar' }, 'mute');
+    expect(tl.snapshot().pending[0].ops[0]).toMatchObject({ deck: 'A' });
+  });
+
+  it('não deixa duas transições ao mesmo tempo', async () => {
+    const { tl } = await setup();
+    await tl.schedule([{ op: 'transition', bars: 16, style: 'crossfade' }], { at: 'bar' }, 'x');
+    await expect(tl.schedule([{ op: 'transition', bars: 16, style: 'cut' }], { at: 'bar' }, 'y')).rejects.toThrow(OpError);
+  });
+
+  it('parar no meio da transição deixa o deck que entrava no ar', async () => {
+    const { engine, tl } = await setup();
+    await tl.schedule([{ op: 'transition', bars: 16, style: 'crossfade' }], { at: 'bar' }, 'x');
+    engine.cycle = 2;
+    tl.tick();
+    tl.stop();
+    expect(tl.state.live).toBe('B');
+    expect(tl.state.transition).toBeNull();
   });
 });

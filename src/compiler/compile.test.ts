@@ -3,12 +3,13 @@ import * as core from '@strudel/core';
 import * as mini from '@strudel/mini';
 import * as tonal from '@strudel/tonal';
 import { transpiler } from '@strudel/transpiler';
-import { compile } from './compile';
+import { compileDeck as compile, compile as compileMix } from './compile';
+import { testMix } from '../test/mix';
 import { STYLES } from '../presets/styles';
 import { INSTRUMENTS } from '../presets/instruments';
 import { PATTERNS } from '../presets/patterns';
 import { installArrangeHelpers } from '../engine/arrange';
-import { applyOp } from '../song/ops';
+import { applyDeckOp as applyOp, applyOp as applyMix } from '../song/ops';
 import { sectionStarts } from '../song/time';
 import type { SongState } from '../song/types';
 
@@ -92,5 +93,49 @@ describe('compile', () => {
         expect(onsets(pat, 0, 4).length, `${p.id} + ${inst.id}`).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('compile — mixagem', () => {
+  const mixWith = (style: 'crossfade' | 'filter_swap' | 'cut') => {
+    const m = applyMix(testMix(), { op: 'transition', bars: 16, style }, 64);
+    return m;
+  };
+
+  it('sem transição só o deck no ar é compilado', async () => {
+    const pat = await evalCode(compileMix(testMix()));
+    const orbits = new Set<number>(onsets(pat, 0, 4).map((h: any) => h.value.orbit));
+    expect([...orbits].every((o) => o < 10)).toBe(true);
+  });
+
+  it('crossfade: os dois decks soam, volumes cruzam ao longo da transição', async () => {
+    const pat = await evalCode(compileMix(mixWith('crossfade')));
+    const gains = (c: number) => {
+      const hs = onsets(pat, c, c + 0.25);
+      const a = hs.find((h: any) => h.value.orbit < 10)?.value.postgain;
+      const b = hs.find((h: any) => h.value.orbit > 10)?.value.postgain;
+      return { a, b };
+    };
+    expect(gains(64).a).toBeCloseTo(1);
+    expect(gains(64).b).toBeCloseTo(0);
+    expect(gains(72).a).toBeCloseTo(0.71, 1);
+    expect(gains(72).b).toBeCloseTo(0.71, 1);
+    expect(gains(79.75).a).toBeLessThan(0.1);
+  });
+
+  it('filter_swap: o deck que entra começa abafado e abre; o deck B começa do intro', async () => {
+    const m = mixWith('filter_swap');
+    expect(m.decks.B.anchor).toBe(64);
+    const pat = await evalCode(compileMix(m));
+    const djfB = (c: number) => onsets(pat, c, c + 0.25).find((h: any) => h.value.orbit > 10)?.value.djf;
+    expect(djfB(64)).toBeCloseTo(0.12);
+    expect(djfB(76.8)).toBeCloseTo(0.5, 1);
+  });
+
+  it('cut: troca seca', async () => {
+    const pat = await evalCode(compileMix(mixWith('cut')));
+    const hs = onsets(pat, 64, 64.25);
+    expect(hs.filter((h: any) => h.value.orbit < 10).every((h: any) => h.value.postgain === 0)).toBe(true);
+    expect(hs.some((h: any) => h.value.orbit > 10 && h.value.postgain === 1)).toBe(true);
   });
 });

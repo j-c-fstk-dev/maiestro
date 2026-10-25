@@ -1,4 +1,4 @@
-import type { SongState } from '../song/types';
+import type { MixState } from '../song/mix';
 import type { Op } from '../song/ops';
 
 /**
@@ -11,15 +11,15 @@ export type SessionEvent =
   | { t: number; type: 'applied'; cycle: number; label: string; source: string; ops: Op[] }
   | { t: number; type: 'prompt'; text: string; reply?: string; error?: string }
   | { t: number; type: 'command'; text: string }
-  | { t: number; type: 'transport'; action: 'play' | 'stop'; state?: SongState };
+  | { t: number; type: 'transport'; action: 'play' | 'stop'; state?: MixState };
 
 export interface SessionFile {
   app: 'maestro';
-  version: 1;
+  version: 2;
   startedAt: string;
   durationSec: number;
   sampleRate: number;
-  initialState: SongState;
+  initialState: MixState;
   events: SessionEvent[];
 }
 
@@ -30,7 +30,7 @@ export class SessionLog {
   private startedAt = new Date().toISOString();
   private events: SessionEvent[] = [];
 
-  constructor(private initialState: SongState) {}
+  constructor(private initialState: MixState) {}
 
   add(e: Without<SessionEvent, 't'>) {
     this.events.push({ ...e, t: Math.round((performance.now() - this.start) / 10) / 100 } as SessionEvent);
@@ -39,7 +39,7 @@ export class SessionLog {
   toFile(durationSec: number, sampleRate: number): SessionFile {
     return {
       app: 'maestro',
-      version: 1,
+      version: 2,
       startedAt: this.startedAt,
       durationSec,
       sampleRate,

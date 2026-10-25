@@ -11,10 +11,12 @@ import {
   panic,
   play,
   run,
+  setTarget,
   stop,
   toggleMute,
   togglePlay,
   toggleRecording,
+  toggleTarget,
   undo,
   useUi,
   type LogLine,
@@ -25,6 +27,8 @@ import { INSTRUMENTS_BY_ID } from '../presets/instruments';
 import { PATTERNS_BY_ID } from '../presets/patterns';
 import { positionAt, loopLength } from '../song/time';
 import { LAYER_IDS, type SongState } from '../song/types';
+import { DECK_IDS, liveDeck, type DeckId, type MixState } from '../song/mix';
+import { TRANSITIONS } from '../presets/transitions';
 import type { Entry } from '../scheduler/timeline';
 
 const SECTION_LABEL: Record<string, string> = {
@@ -37,9 +41,10 @@ const SECTION_LABEL: Record<string, string> = {
 };
 
 export function App() {
-  const { snap, showCode, loading, thinking } = useUi();
+  const { snap, showCode, loading, thinking, target } = useUi();
   const now = useNow();
-  const { state, playing, pending } = snap;
+  const { state: mix, playing, pending } = snap;
+  const state = liveDeck(mix);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -64,8 +69,11 @@ export function App() {
       <Header state={state} playing={playing} now={now} pendingCount={pending.length} loading={loading} thinking={thinking} />
       <div className="main">
         <div className="col">
-          <Deck state={state} playing={playing} now={now} />
-          {!playing && <Setup current={state.style} loading={loading} />}
+          <Mixer mix={mix} playing={playing} now={now} />
+          {DECK_IDS.map((id) => (
+            <Deck key={id} id={id} mix={mix} playing={playing} now={now} target={target} />
+          ))}
+          {(!playing || target !== mix.live) && <Setup deck={target} current={mix.decks[target].style} loading={loading} playing={playing} />}
           <Pending pending={pending} now={now} />
           <Recordings />
         </div>
@@ -164,37 +172,78 @@ function Recordings() {
   );
 }
 
-function Deck({ state, playing, now }: { state: SongState; playing: boolean; now: number }) {
-  const pos = positionAt(state, playing ? now : 0);
-  const section = state.arrangement[pos.index];
+function Mixer({ mix, playing, now }: { mix: MixState; playing: boolean; now: number }) {
+  const t = mix.transition;
+  const x = t ? Math.min(1, Math.max(0, (now - t.start) / t.bars)) : mix.live === 'A' ? 0 : 1;
+  // durante a transição o "fader" anda de um lado para o outro
+  const pos = t ? (t.from === 'A' ? x : 1 - x) : x;
   return (
-    <section className="panel">
-      <h2>
-        deck A <span className="dim">· {state.name}</span>
+    <section className="panel mixer">
+      <div className="xfader">
+        <span className={mix.live === 'A' || t ? 'live' : 'dim'}>A</span>
+        <div className="track">
+          <div className="knob" style={{ left: `calc(${pos * 100}% - 6px)` }} />
+        </div>
+        <span className={mix.live === 'B' || t ? 'live' : 'dim'}>B</span>
+        <span className="dim">
+          {t ? `${t.style} ${t.from}→${t.to} · ${Math.round(x * 100)}% · faltam ${Math.max(0, Math.ceil(t.start + t.bars - now))}c` : `no ar: deck ${mix.live}`}
+        </span>
+      </div>
+      {playing && !t && (
+        <div className="row">
+          <span className="dim">transição para o deck {mix.live === 'A' ? 'B' : 'A'} (na próxima frase):</span>
+          {TRANSITIONS.map((tr) => (
+            <button key={tr.id} className="ghost" title={tr.description} onClick={() => void run(`/xfade ${tr.id}`)}>
+              {tr.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Deck({ id, mix, playing, now, target }: { id: DeckId; mix: MixState; playing: boolean; now: number; target: DeckId }) {
+  const state = mix.decks[id];
+  const sounding = playing && (mix.live === id || mix.transition?.to === id || mix.transition?.from === id);
+  const pos = positionAt(state, sounding ? now : 0);
+  const section = state.arrangement[pos.index];
+  const isLive = mix.live === id;
+  const editing = target === id;
+  const role = mix.transition?.to === id ? 'ENTRANDO' : mix.transition?.from === id ? 'SAINDO' : isLive ? 'NO AR' : 'preparado';
+  return (
+    <section className={`panel deck ${editing ? 'editing' : 'collapsed'} ${isLive ? 'is-live' : ''}`}>
+      <h2 className="deck-head" onClick={() => setTarget(id)} title="clique (ou Tab no prompt) para editar este deck">
+        deck {id} <span className={`badge ${isLive || mix.transition ? 'badge-live' : ''}`}>{role}</span>
+        <span className="dim">
+          {' '}
+          · {state.name} · {state.bpm} BPM · {state.key.root} {state.key.scale}
+        </span>
+        {editing && <span className="badge badge-edit">editando</span>}
       </h2>
-      <Arrangement state={state} playing={playing} now={now} />
-      <div className="layers">
-        {LAYER_IDS.map((id) => {
-          const layer = state.layers[id];
+      <Arrangement state={state} playing={sounding} now={now} />
+      {editing && <div className="layers">
+        {LAYER_IDS.map((lid) => {
+          const layer = state.layers[lid];
           if (!layer) {
             return (
-              <div key={id} className="layer empty">
-                <span className="lid">{id}</span>
-                <span className="dim">— vazio · /add {id}</span>
+              <div key={lid} className="layer empty">
+                <span className="lid">{lid}</span>
+                <span className="dim">— vazio · /add {lid}</span>
               </div>
             );
           }
-          const sectionMuted = section.mute.includes(id);
-          const status = layer.muted ? 'mudo' : sectionMuted ? 'fora da seção' : 'tocando';
+          const sectionMuted = sounding && section.mute.includes(lid);
+          const status = layer.muted ? 'mudo' : sectionMuted ? 'fora da seção' : sounding ? 'tocando' : 'pronto';
           return (
             <button
-              key={id}
+              key={lid}
               className={`layer ${layer.muted ? 'muted' : sectionMuted ? 'resting' : 'on'}`}
-              onClick={() => toggleMute(id)}
+              onClick={() => toggleMute(lid, id)}
               title="clique para mutar/desmutar (no próximo compasso)"
             >
               <span className="led">{layer.muted ? '□' : sectionMuted ? '◌' : '■'}</span>
-              <span className="lid">{id}</span>
+              <span className="lid">{lid}</span>
               <span className="inst">{INSTRUMENTS_BY_ID[layer.instrument]?.label ?? layer.instrument}</span>
               <span className="pat">{PATTERNS_BY_ID[layer.pattern]?.label ?? layer.pattern}</span>
               <span className="gain">{'▮'.repeat(Math.round(layer.gain * 5)).padEnd(7, '▯')}</span>
@@ -202,7 +251,7 @@ function Deck({ state, playing, now }: { state: SongState; playing: boolean; now
             </button>
           );
         })}
-      </div>
+      </div>}
     </section>
   );
 }
@@ -229,10 +278,12 @@ function Arrangement({ state, playing, now }: { state: SongState; playing: boole
   );
 }
 
-function Setup({ current, loading }: { current: string; loading: boolean }) {
+function Setup({ deck, current, loading, playing }: { deck: DeckId; current: string; loading: boolean; playing: boolean }) {
   return (
     <section className="panel">
-      <h2>montar o deck</h2>
+      <h2>
+        carregar um estilo no deck {deck} <span className="dim">· {playing ? 'ele fica preparado até a transição' : 'Tab troca o deck'}</span>
+      </h2>
       <div className="styles">
         {STYLES.map((s) => (
           <button key={s.id} className={`style ${current === s.id ? 'selected' : ''}`} onClick={() => loadStyle(s.id)}>
@@ -289,9 +340,10 @@ function Log() {
   );
 }
 
-const COMPLETIONS = ['/play', '/stop', '/rec', '/undo', '/insert', '/style', '/bpm', '/key', '/mute', '/unmute', '/gain', '/pattern', '/inst', '/add', '/remove', '/fx', '/filter', '/reverb', '/volume', '/mood', '/arr', '/goto', '/list', '/panic', '/code', '/clear', '/help'];
+const COMPLETIONS = ['/play', '/stop', '/rec', '/undo', '/insert', '/deck', '/load', '/copy', '/xfade', '/style', '/bpm', '/key', '/mute', '/unmute', '/gain', '/pattern', '/inst', '/add', '/remove', '/fx', '/filter', '/reverb', '/volume', '/mood', '/arr', '/goto', '/list', '/panic', '/code', '/clear', '/help'];
 
 function Prompt() {
+  const target = useUi((s) => s.target);
   const [value, setValue] = useState('');
   const history = useRef<string[]>([]);
   const cursor = useRef(-1);
@@ -321,12 +373,16 @@ function Prompt() {
       const match = COMPLETIONS.filter((c) => c.startsWith(value));
       if (match.length === 1) setValue(match[0] + ' ');
       else if (match.length > 1) void run(`/help`);
+    } else if (e.key === 'Tab') {
+      // fora do autocompletar, Tab troca o deck que os comandos editam
+      e.preventDefault();
+      toggleTarget();
     }
   };
 
   return (
     <div className="prompt">
-      <span className="caret">›</span>
+      <span className="caret">{target} ›</span>
       <input
         ref={input}
         value={value}

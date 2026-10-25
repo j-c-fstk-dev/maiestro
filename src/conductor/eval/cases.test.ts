@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Conductor, type ChatFn } from '../conductor';
 import { Timeline } from '../../scheduler/timeline';
 import { FakeEngine } from '../../test/fakeEngine';
-import { STYLES } from '../../presets/styles';
+import { testMix } from '../../test/mix';
 import { CASES } from './cases';
 
 /**
@@ -51,6 +51,14 @@ const IDEAL: Record<string, unknown> = {
   'instrumento que não existe': { plans: [p('bar', [{ op: 'set_fx', layer: 'lead', distort: 2 }])] },
   'pedido vago': { plans: [p('phrase', [{ op: 'set_pattern', layer: 'hats', pattern: 'shuffle' }])] },
   'relativo a agora': { plans: [p({ after: 8 }, [{ op: 'mute', layer: 'hats' }])] },
+  'preparar outro deck': { plans: [p('bar', [{ op: 'load_style', style: 'melodic', deck: 'b' }])] },
+  'transição com estilo': { plans: [p('phrase', [{ op: 'transition', style: 'bass_swap', bars: 32 }])] },
+  'preparar e mixar': {
+    plans: [
+      p('bar', [{ op: 'load_style', style: 'house', deck: 'B' }, { op: 'set_bpm', bpm: 120, deck: 'B' }]),
+      p('section', [{ op: 'transition', style: 'filter_swap', bars: 32 }]),
+    ],
+  },
 };
 
 describe('casos da avaliação aceitam a resposta ideal', () => {
@@ -60,7 +68,7 @@ describe('casos da avaliação aceitam a resposta ideal', () => {
   for (const c of CASES) {
     it(c.name, async () => {
       const engine = new FakeEngine();
-      const tl = new Timeline(engine, STYLES[0].build());
+      const tl = new Timeline(engine, testMix());
       await tl.play();
       for (const op of c.setup ?? []) await tl.schedule([op], { at: 'bar' }, 'setup');
       engine.cycle = 45;

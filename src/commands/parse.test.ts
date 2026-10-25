@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CommandError, parseCommand } from './parse';
-import { STYLES } from '../presets/styles';
+import { testMix } from '../test/mix';
 
-const state = STYLES[0].build();
-const p = (s: string) => parseCommand(s, state);
+const mix = testMix();
+const p = (s: string) => parseCommand(s, mix);
 
 describe('parseCommand', () => {
   it('texto sem barra vai para a IA', () => {
@@ -36,5 +36,22 @@ describe('parseCommand', () => {
     expect(() => p('/bpm 500')).toThrow(CommandError);
     expect(() => p('/mute guitarra')).toThrow(/camada inválida/);
     expect(() => p('/nada')).toThrow(/desconhecido/);
+  });
+});
+
+describe('parseCommand — dois decks', () => {
+  it('/xfade com compassos e estilo', () => {
+    expect(p('/xfade 32 bass_swap')).toMatchObject({ ops: [{ op: 'transition', to: 'B', bars: 32, style: 'bass_swap' }], when: { at: 'phrase' } });
+    expect(p('/xfade cut @drop')).toMatchObject({ ops: [{ op: 'transition', bars: 1, style: 'cut' }], when: { at: 'section_type', type: 'drop' } });
+    expect(p('/xfade from:drop')).toMatchObject({ ops: [{ op: 'transition', style: 'filter_swap', bars: 32, enterAt: 'drop' }] });
+  });
+
+  it('/load vai para o deck fora do ar por padrão', () => {
+    expect(p('/load house')).toMatchObject({ ops: [{ op: 'load', deck: 'B' }], when: { at: 'bar' } });
+  });
+
+  it('comandos valem para o deck selecionado', () => {
+    expect(parseCommand('/bpm 120', mix, 'B')).toMatchObject({ ops: [{ op: 'set_bpm', bpm: 120, deck: 'B' }], label: '[B] BPM 120' });
+    expect(p('/deck b')).toEqual({ kind: 'target', deck: 'B' });
   });
 });

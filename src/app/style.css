@@ -125,3 +125,15 @@ button { font: inherit; color: inherit; }
 .recordings .row { margin-top: 6px; }
 .ghost:disabled { opacity: 0.6; cursor: wait; }
 .ghost.danger { color: var(--err); }
+
+/* dois decks */
+.deck-head { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.deck.editing { border-color: #2a4a36; }
+.deck.collapsed .arr { margin-bottom: 0; }
+.badge { font-size: 10px; padding: 1px 5px; border: 1px solid var(--line); color: var(--dim); letter-spacing: 0.08em; }
+.badge-live { color: var(--accent); border-color: var(--accent); }
+.badge-edit { color: var(--ai); border-color: #24435a; margin-left: auto; }
+.mixer .xfader { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mixer .track { position: relative; width: 160px; flex: none; height: 6px; background: var(--line); }
+/* sem transition CSS: a posição já é atualizada a cada frame (uma transition reiniciada todo frame não sai do lugar) */
+.mixer .knob { position: absolute; top: -5px; width: 12px; height: 16px; background: var(--accent); }

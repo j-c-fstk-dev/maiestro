@@ -101,6 +101,19 @@ export const CASES: EvalCase[] = [
     const entry = tl.snapshot().pending.find((e) => e.ops.some((o) => o.op === 'mute' && o.layer === 'hats'));
     return all(need(m, 'chimbal não mutou'), need(entry && entry.cycle >= 52 && entry.cycle <= 54, `entrou no compasso ${entry?.cycle} (esperado ~53)`));
   } },
+  // dois decks
+  { name: 'preparar outro deck', prompt: 'prepara um melodic techno no outro deck', check: (r) => {
+    const load = find(r, (o) => o.op === 'load_style' && o.style === 'melodic');
+    return all(need(load, 'não carregou melodic'), need(load && load.op === 'load_style' && load.deck === 'B', 'não foi no deck B'));
+  } },
+  { name: 'transição com estilo', prompt: 'faz a transição pro outro deck em 32 compassos trocando os graves', check: (r) =>
+    need(find(r, (o) => o.op === 'transition' && o.style === 'bass_swap' && (o.bars ?? 32) === 32), 'sem transição bass_swap de 32') },
+  { name: 'preparar e mixar', prompt: 'prepara um house no outro deck, um pouco mais lento, e na próxima seção mixa pra ele', check: (r, tl) => {
+    const load = find(r, (o) => o.op === 'load_style' && o.style === 'house');
+    const tr = find(r, (o) => o.op === 'transition');
+    const b = tl.stateAt(Infinity).decks.B;
+    return all(need(load, 'não carregou house'), need(tr, 'sem transição'), need(b.bpm < 124 || find(r, (o) => o.op === 'set_bpm' && o.deck === 'B'), 'BPM do B não baixou'));
+  } },
 ];
 
 export { flat };
