@@ -1,5 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { engine, loadStyle, panic, play, run, stop, togglePlay, toggleMute, undo, useUi, type LogLine } from './controller';
+import {
+  discardRecording,
+  downloadMp3,
+  downloadSession,
+  downloadWav,
+  engine,
+  formatTime,
+  loadStyle,
+  mb,
+  panic,
+  play,
+  run,
+  stop,
+  toggleMute,
+  togglePlay,
+  toggleRecording,
+  undo,
+  useUi,
+  type LogLine,
+} from './controller';
 import { useNow } from './useNow';
 import { STYLES } from '../presets/styles';
 import { INSTRUMENTS_BY_ID } from '../presets/instruments';
@@ -48,6 +67,7 @@ export function App() {
           <Deck state={state} playing={playing} now={now} />
           {!playing && <Setup current={state.style} loading={loading} />}
           <Pending pending={pending} now={now} />
+          <Recordings />
         </div>
         <div className="col">
           {showCode && (
@@ -87,7 +107,60 @@ function Header({ state, playing, now, pendingCount, loading, thinking }: { stat
       )}
       {pendingCount > 0 && <span className="warn">{pendingCount} agendada(s)</span>}
       {thinking && <span className="thinking">maestro pensando…</span>}
+      <RecButton />
     </header>
+  );
+}
+
+function RecButton() {
+  const rec = useUi((s) => s.rec);
+  return (
+    <button className={`rec ${rec ? 'on' : ''}`} onClick={() => void toggleRecording()} title="gravar a saída (/rec)">
+      {rec ? (
+        <>
+          ● REC {formatTime(rec.seconds)} <span className="dim">{mb(rec.bytes)}</span>
+          <span className="meter" style={{ width: `${Math.round(Math.min(1, rec.peak) * 24)}px` }} />
+        </>
+      ) : (
+        '● gravar'
+      )}
+    </button>
+  );
+}
+
+function Recordings() {
+  const recordings = useUi((s) => s.recordings);
+  if (!recordings.length) return null;
+  return (
+    <section className="panel">
+      <h2>
+        gravações <span className="dim">· ficam só nesta aba até você baixar</span>
+      </h2>
+      <ul className="recordings">
+        {recordings.map((r) => (
+          <li key={r.id}>
+            <div>
+              <b>{r.name}</b> <span className="dim">· {formatTime(r.seconds)}</span>
+              {r.silent && <span className="warn"> · em silêncio</span>}
+            </div>
+            <div className="row">
+              <button className="ghost" onClick={() => void downloadMp3(r.id)} disabled={r.mp3Progress !== undefined}>
+                {r.mp3Progress !== undefined ? `gerando MP3… ${Math.round(r.mp3Progress * 100)}%` : 'baixar MP3 (320k)'}
+              </button>
+              <button className="ghost" onClick={() => downloadWav(r.id)}>
+                WAV
+              </button>
+              <button className="ghost" onClick={() => downloadSession(r.id)} title="o que aconteceu na sessão: estado inicial, mudanças, pedidos à IA">
+                sessão .json
+              </button>
+              <button className="ghost danger" onClick={() => confirm('Descartar esta gravação?') && discardRecording(r.id)}>
+                descartar
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -216,7 +289,7 @@ function Log() {
   );
 }
 
-const COMPLETIONS = ['/play', '/stop', '/undo', '/insert', '/style', '/bpm', '/key', '/mute', '/unmute', '/gain', '/pattern', '/inst', '/add', '/remove', '/fx', '/filter', '/reverb', '/volume', '/mood', '/arr', '/goto', '/list', '/panic', '/code', '/clear', '/help'];
+const COMPLETIONS = ['/play', '/stop', '/rec', '/undo', '/insert', '/style', '/bpm', '/key', '/mute', '/unmute', '/gain', '/pattern', '/inst', '/add', '/remove', '/fx', '/filter', '/reverb', '/volume', '/mood', '/arr', '/goto', '/list', '/panic', '/code', '/clear', '/help'];
 
 function Prompt() {
   const [value, setValue] = useState('');

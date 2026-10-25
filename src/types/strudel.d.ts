@@ -23,6 +23,7 @@ declare module '@strudel/web' {
   export function samples(source: string | Record<string, unknown>, base?: string): Promise<void>;
   export function getAudioContext(): AudioContext;
   export function initAudio(options?: Record<string, unknown>): Promise<void>;
+  export function getSuperdoughAudioController(): { output: { destinationGain: AudioNode } };
 }
 declare module '@strudel/webaudio' {
   export function getAudioContext(): AudioContext;

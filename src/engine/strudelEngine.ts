@@ -1,4 +1,4 @@
-import { initStrudel, initAudio, samples, getAudioContext } from '@strudel/web';
+import { initStrudel, initAudio, samples, getAudioContext, getSuperdoughAudioController } from '@strudel/web';
 import { switchAt } from './switchAt';
 import { installArrangeHelpers } from './arrange';
 
@@ -115,6 +115,19 @@ export class StrudelEngine {
     return getAudioContext();
   }
 
+  /** Liga um nó na saída master (depois de todos os efeitos), para gravar. */
+  connectOutput(node: AudioNode) {
+    masterNode().connect(node);
+  }
+
+  disconnectOutput(node: AudioNode) {
+    try {
+      masterNode().disconnect(node);
+    } catch {
+      // já desconectado (ex.: o Strudel recriou a saída)
+    }
+  }
+
   dispose() {
     this.stop();
     if (this.timer) clearInterval(this.timer);
@@ -163,4 +176,9 @@ export class StrudelEngine {
     }
     if (changed) this.repl.scheduler.setPattern(this.chain());
   }
+}
+
+/** Último nó antes dos alto-falantes no Strudel (soma de todos os orbits). */
+function masterNode(): AudioNode {
+  return getSuperdoughAudioController().output.destinationGain;
 }

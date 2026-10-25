@@ -3,7 +3,7 @@
 Web app de música eletrônica ao vivo com uma **IA maestro**: você monta a base (estilo, BPM, tom, estrutura),
 dá play e vai mudando a música com comandos. As mudanças entram no tempo certo, sem travar.
 
-> Status: **Fase 2 — IA maestro**: fale com a música em português; os /comandos continuam valendo.
+> Status: **Fase 3 — gravação**: fale com a música em português, use /comandos e grave/exporte MP3.
 > Visão, arquitetura e roadmap: [`docs/PROJETO.md`](docs/PROJETO.md).
 
 ## Rodar localmente
@@ -25,7 +25,8 @@ npm run dev              # abre em http://localhost:5173
    - *abafa tudo* · *mais energia!* · *no próximo drop muda pra fá frígio* · *acelera aos poucos pra 140* · *desfaz*
 
    A resposta aparece no log com o que foi agendado e quando. `Ctrl+Z` desfaz o último pedido inteiro.
-4. Ou use **comandos diretos** (sem IA, instantâneos). Toda mudança entra **no próximo limite musical** e aparece em "agendado".
+4. **Grave:** clique em `● gravar` no topo (ou `/rec`). Ao parar, a gravação aparece em **gravações**: baixe o **MP3 320k**, o **WAV** ou a **sessão .json** (tudo que aconteceu). As gravações ficam só na aba — baixe antes de fechar.
+5. Ou use **comandos diretos** (sem IA, instantâneos). Toda mudança entra **no próximo limite musical** e aparece em "agendado".
 
 | comando | exemplo |
 |---|---|
@@ -36,6 +37,7 @@ npm run dev              # abre em http://localhost:5173
 | efeitos | `/fx lead delay 0.5` · `/filter 0.3` (master) · `/reverb 0.3` · `/mood dark 0.8` |
 | estrutura | `/goto breakdown` · `/insert build:8 drop:16` · `/arr intro:8 build:8 drop:32` · `/style house` |
 | desfazer | `/undo` (ou `Ctrl+Z`) · `/panic` (ou `Esc`) cancela tudo que está agendado |
+| gravar | `/rec` começa/para |
 | info | `/list patterns bass` · `/list insts lead` · `/code` · `/help` |
 
 **Quando:** qualquer comando aceita um sufixo `@bar`, `@phrase` (8 compassos), `@section` ou `@<seção>` (ex.: `@drop`).

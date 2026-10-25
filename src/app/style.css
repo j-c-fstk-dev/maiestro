@@ -116,3 +116,12 @@ button { font: inherit; color: inherit; }
 @keyframes pulse { 50% { opacity: 0.35; } }
 .src { font-size: 11px; padding: 0 4px; border: 1px solid var(--line); color: var(--dim); }
 .src-ai { color: var(--ai); border-color: #24435a; }
+
+.rec { margin-left: auto; background: transparent; border: 1px solid var(--line); color: var(--dim); padding: 3px 10px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; }
+.rec:hover { border-color: var(--err); color: var(--err); }
+.rec.on { border-color: var(--err); color: var(--err); }
+.rec .meter { display: inline-block; height: 6px; background: var(--err); transition: width 0.2s; }
+.recordings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.recordings .row { margin-top: 6px; }
+.ghost:disabled { opacity: 0.6; cursor: wait; }
+.ghost.danger { color: var(--err); }

@@ -326,7 +326,7 @@ maiestro/
 │  ├─ commands/              ← /comandos diretos → ops
 │  ├─ conductor/             ← cliente do LLM (Fase 2: prompts, parsing)
 │  ├─ autopilot/             ← (Fase 5)
-│  └─ recorder/              ← (Fase 3)
+│  └─ recorder/              ← gravação: worklet de captura, PCM, WAV, MP3 (worker), registro da sessão
 ├─ .env.example
 └─ package.json
 ```
@@ -389,10 +389,17 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - **Avaliação:** `src/conductor/eval/cases.ts` tem 32 pedidos com critérios; `cases.test.ts` garante que uma resposta ideal passa em todos (testa os critérios); `npm run eval:ai` roda os 32 com o LLM de verdade e imprime um relatório (acertos, tentativas, latência, tokens).
 - **Teste no navegador** com um LLM falso local: retry após resposta inválida, os 4 planos agendados nos compassos certos, e tocando até o fim: c17 sem kick + coro, c25 build inserido, c33 drop em lá frígio com escuridão 0,85 e o kick de volta. `Ctrl+Z` cancela o pedido inteiro.
 
-### Fase 3 — Gravação
-- [ ] Gravação WAV via AudioWorklet, export MP3.
-- [ ] Log da sessão em JSON.
+### Fase 3 — Gravação ✅
+- [x] Gravação WAV via AudioWorklet, export MP3.
+- [x] Log da sessão em JSON.
 - **Pronto quando:** dá pra gravar 5 min e subir o MP3.
+
+**Como ficou (2026-10-25):**
+- `● gravar` no topo (ou `/rec`) liga um AudioWorklet na **saída master do Strudel** (`destinationGain`, depois de todos os efeitos) — o engine expõe `connectOutput`/`disconnectOutput`, o resto do app não conhece o Strudel.
+- O worklet junta blocos de 8192 amostras e manda para a thread principal, que guarda **PCM 16 bits estéreo** (~10,6 MB/min a 44,1 kHz). O medidor no botão mostra o pico.
+- Ao parar, a gravação aparece em **gravações** com: **MP3 320 kbps** (gerado num Web Worker com `@breezystack/lamejs`, com barra de progresso — 5 min levam ~18 s), **WAV** sem perdas e **sessão .json** (estado inicial + cada mudança aplicada com tempo, compasso, origem e ops + pedidos à IA e respostas + play/stop).
+- As gravações ficam só na memória da aba (aviso ao fechar a aba; aviso a cada 10 min de gravação).
+- **Testado no navegador headless:** WAV e MP3 com sinal (RMS 0,24), MP3 decodificado pelo próprio Chromium com a duração certa; gravação longa de 5 min com mudanças no meio.
 
 ### Fase 4 — Dois decks e transições
 - [ ] Deck B, mixer/crossfader, rampa de BPM.
@@ -423,6 +430,7 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - **Samples:** só usar samples com licença que permita uso comercial da música gerada (CC0 ou equivalente) antes de publicar no Spotify/YouTube. Registrar a origem/licença de cada banco em `presets/`.
 - **Áudio gerado por IA (Lyria etc.):** checar os termos do provedor antes de publicar comercialmente.
 - **z.ai:** só gera *comandos*, não áudio — sem impacto nos direitos da música.
+- **Encoder MP3:** `@breezystack/lamejs` é LGPL-3.0 (LAME). Uso pessoal ok; num produto fechado, usar como biblioteca separada ou trocar por encoder do navegador/servidor.
 
 ---
 
@@ -461,6 +469,9 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 19 | 2026-10-25 | Desfazer por grupo (comando ou pedido inteiro); se já tocou, `restore` do estado anterior | É o que o usuário entende por "desfaz" |
 | 20 | 2026-10-25 | Camada `vocal` com coro sintético (formante) até termos samples de voz | Atende "voz etérea" sem depender de samples externos |
 | 21 | 2026-10-25 | Avaliação da IA como suíte do Vitest separada (`vitest.eval.config.ts`) | Funciona em qualquer SO; não roda no `npm test` (gasta API) |
+| 22 | 2026-10-25 | Gravação por AudioWorklet na saída master, PCM 16 bits na memória | Sem perdas, sem dependência; WAV direto; MP3 só quando pedir |
+| 23 | 2026-10-25 | MP3 com `@breezystack/lamejs` (LAME em JS, LGPL) num Web Worker | Sem WASM/servidor; não engasga a música. LGPL: rever na comercialização |
+| 24 | 2026-10-25 | Gravações só na memória da aba (por enquanto) | Simples; IndexedDB fica para quando precisar sobreviver a recarregar |
 
 ---
 

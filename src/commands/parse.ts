@@ -25,6 +25,7 @@ export type Command =
   | { kind: 'stop' }
   | { kind: 'panic' }
   | { kind: 'undo' }
+  | { kind: 'rec' }
   | { kind: 'code' }
   | { kind: 'clear' }
   | { kind: 'info'; text: string }
@@ -53,6 +54,7 @@ export const HELP = `comandos (sufixo opcional @bar @phrase @section @<seção>,
   /goto <seção>             pular para a próxima seção desse tipo (padrão @phrase)
   /list styles | layers | patterns <camada> | insts <camada>
   /undo (ou Ctrl+Z)  desfaz o último comando/pedido · /panic (ou Esc) cancela tudo que está agendado
+  /rec   começa/para a gravação (baixe WAV, MP3 e o registro da sessão no painel "gravações")
   /code  mostra o código Strudel   ·   /clear  limpa o log
 camadas: ${LAYER_IDS.join(', ')} · seções: ${SECTION_TYPES.join(', ')}`;
 
@@ -85,6 +87,9 @@ export function parseCommand(input: string, state: SongState): Command {
       return { kind: 'panic' };
     case 'undo':
       return { kind: 'undo' };
+    case 'rec':
+    case 'record':
+      return { kind: 'rec' };
     case 'code':
       return { kind: 'code' };
     case 'clear':

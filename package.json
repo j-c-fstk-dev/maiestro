@@ -15,6 +15,7 @@
   },
   "license": "AGPL-3.0-or-later",
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@strudel/core": "^1.2.6",
     "@strudel/mini": "^1.2.6",
     "@strudel/tonal": "^1.2.6",
