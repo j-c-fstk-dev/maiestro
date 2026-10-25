@@ -137,8 +137,12 @@ export function localRotation(mix: MixState, rng: Rng): Move[] {
   const current = mix.decks[mix.live].style;
   const style = pick(rng, STYLES.filter((s) => s.id !== current));
   const tr = pick(rng, TRANSITIONS.filter((t) => t.id !== 'cut'));
+  // como um DJ: a próxima música fica a no máximo ±10% do BPM atual (o tempo anda, mas não salta)
+  const bpmNow = mix.decks[mix.live].bpm;
+  const next = style.build();
+  next.bpm = Math.round(Math.min(bpmNow * 1.1, Math.max(bpmNow * 0.9, next.bpm)));
   return [
-    { label: `próxima música no deck ${off}: ${style.label}`, ops: [{ op: 'load', state: style.build(), deck: off }], when: { at: 'bar' } },
+    { label: `próxima música no deck ${off}: ${style.label} (${next.bpm} BPM)`, ops: [{ op: 'load', state: next, deck: off }], when: { at: 'bar' } },
     { label: `transição ${tr.label} para o deck ${off}`, ops: [{ op: 'transition', to: off, bars: tr.defaultBars, style: tr.id }], when: { at: 'section' } },
   ];
 }

@@ -118,6 +118,9 @@ describe('Autopilot', () => {
     // carregou outra música no B e a transição já começou (ou vai começar) na próxima seção
     expect(tl.stateAt(Infinity).live).toBe('B');
     expect(tl.stateAt(Infinity).decks.B.style).not.toBe('melodic');
+    const bpm = tl.stateAt(Infinity).decks.B.bpm;
+    expect(bpm).toBeGreaterThanOrEqual(115); // techno 128 ± 10%
+    expect(bpm).toBeLessThanOrEqual(141);
   });
 });
 

@@ -168,7 +168,8 @@ Mudanças recentes do piloto (não repita): ${this.recent.join(' | ') || 'nenhum
     if (this.canCallAi()) {
       const ok = await this.askAi(
         `[PILOTO AUTOMÁTICO · autonomia ${this.autonomy}%] Hora de trocar de música. Prepare no deck ${off} uma música nova
-(load_style com um estilo diferente de "${liveDeck(mix).style}", mais 1 a 3 ajustes com "deck":"${off}") e faça a transição
+(load_style com um estilo diferente de "${liveDeck(mix).style}", mais 1 a 3 ajustes com "deck":"${off}"; deixe o BPM dele
+entre ${Math.round(liveDeck(mix).bpm * 0.9)} e ${Math.round(liveDeck(mix).bpm * 1.1)} com set_bpm) e faça a transição
 para ele com "when":"section" e um estilo de transição adequado ao clima.`,
         'large',
         true,
