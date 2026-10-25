@@ -3,7 +3,7 @@
 Web app de música eletrônica ao vivo com uma **IA maestro**: você monta a base (estilo, BPM, tom, estrutura),
 dá play e vai mudando a música com comandos. As mudanças entram no tempo certo, sem travar.
 
-> Status: **Fase 4 — dois decks**: fale com a música em português, prepare a próxima música no outro deck, mixe com transições de DJ e grave em MP3.
+> Status: **Fase 5 — piloto automático**: fale com a música em português, mixe entre dois decks, deixe o maestro conduzir sozinho e grave em MP3.
 > Visão, arquitetura e roadmap: [`docs/PROJETO.md`](docs/PROJETO.md).
 
 ## Rodar localmente
@@ -26,8 +26,9 @@ npm run dev              # abre em http://localhost:5173
 
    A resposta aparece no log com o que foi agendado e quando. `Ctrl+Z` desfaz o último pedido inteiro.
 4. **Dois decks:** o deck A começa no ar; o B fica preparado (melodic techno por padrão). Clique no título de um deck (ou `Tab` no prompt) para escolher qual você edita — o prompt mostra `A ›`/`B ›`. Peça ao maestro *"prepara um house mais lento no outro deck e mixa na próxima seção"*, ou use os botões de transição no mixer / `/xfade`.
-5. **Grave:** clique em `● gravar` no topo (ou `/rec`). Ao parar, a gravação aparece em **gravações**: baixe o **MP3 320k**, o **WAV** ou a **sessão .json** (tudo que aconteceu). As gravações ficam só na aba — baixe antes de fechar.
-6. Ou use **comandos diretos** (sem IA, instantâneos). Toda mudança entra **no próximo limite musical** e aparece em "agendado".
+5. **Piloto automático:** arraste o controle no mixer (ou `/auto 60`). Até 30% ele só mexe em detalhes; até 70% também em camadas e estrutura; acima disso muda tom/BPM e **troca de música sozinho**. Ele dá a vez quando você mexe. Sem IA (ou com `/auto ia off`) ele usa variações locais.
+6. **Grave:** clique em `● gravar` no topo (ou `/rec`). Ao parar, a gravação aparece em **gravações**: baixe o **MP3 320k**, o **WAV** ou a **sessão .json** (tudo que aconteceu). As gravações ficam só na aba — baixe antes de fechar.
+7. Ou use **comandos diretos** (sem IA, instantâneos). Toda mudança entra **no próximo limite musical** e aparece em "agendado".
 
 | comando | exemplo |
 |---|---|
@@ -39,6 +40,7 @@ npm run dev              # abre em http://localhost:5173
 | estrutura | `/goto breakdown` · `/insert build:8 drop:16` · `/arr intro:8 build:8 drop:32` · `/style house` |
 | desfazer | `/undo` (ou `Ctrl+Z`) · `/panic` (ou `Esc`) cancela tudo que está agendado |
 | gravar | `/rec` começa/para |
+| piloto | `/auto 60` · `/auto off` · `/auto ia off` (só variações locais) |
 | decks | `/deck b` (editar o B) · `/load house` (carrega no deck fora do ar) · `/copy a b` · `/xfade 32 bass_swap` · `/xfade cut @drop` · `/list transitions` |
 | info | `/list patterns bass` · `/list insts lead` · `/code` · `/help` |
 

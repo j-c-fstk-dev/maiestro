@@ -29,6 +29,7 @@ export type Command =
   | { kind: 'undo' }
   | { kind: 'rec' }
   | { kind: 'target'; deck: DeckId }
+  | { kind: 'auto'; autonomy?: number; ai?: boolean }
   | { kind: 'code' }
   | { kind: 'clear' }
   | { kind: 'info'; text: string }
@@ -58,6 +59,9 @@ export const HELP = `comandos (sufixo opcional @bar @phrase @section @<seção>,
   /list styles | layers | transitions | patterns <camada> | insts <camada>
 dois decks: os comandos valem para o deck selecionado (Tab ou /deck a|b troca)
   /deck a|b                 selecionar o deck que os comandos editam
+piloto automático:
+  /auto <0-100>             autonomia (0 = desligado): até 30 detalhes · até 70 + camadas/estrutura · acima + tom, BPM e troca de música
+  /auto off · /auto ia on|off (usar ou não a IA; sem ela, variações locais)
   /load <estilo> [a|b]      carregar um estilo no deck (padrão: o que não está no ar)
   /copy a b                 copiar um deck para o outro
   /xfade [compassos] [estilo] [from:<seção>]   transição para o outro deck (padrão @phrase)
@@ -118,6 +122,17 @@ export function parseCommand(input: string, mix: MixState, target: DeckId = mix.
     }
     case 'deck':
       return { kind: 'target', deck: deckArg(args[0]) };
+    case 'auto': {
+      const a = (args[0] ?? '').toLowerCase();
+      if (a === 'off') return { kind: 'auto', autonomy: 0 };
+      if (a === 'ia' || a === 'ai') {
+        const v = (args[1] ?? '').toLowerCase();
+        if (v !== 'on' && v !== 'off') throw new CommandError('use /auto ia on ou /auto ia off');
+        return { kind: 'auto', ai: v === 'on' };
+      }
+      if (!a) return { kind: 'auto' };
+      return { kind: 'auto', autonomy: Math.round(number(a.replace('%', ''), 0, 100, 'autonomia')) };
+    }
     case 'load': {
       const style = STYLES_BY_ID[args[0]];
       if (!style) throw new CommandError(`estilo desconhecido: ${args[0] ?? ''} (${Object.keys(STYLES_BY_ID).join(', ')})`);

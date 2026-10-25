@@ -1,5 +1,5 @@
 import { OpError } from '../song/ops';
-import type { Timeline } from '../scheduler/timeline';
+import type { Source, Timeline } from '../scheduler/timeline';
 import { extractJson, type ChatMessage, type LlmResult } from './llmClient';
 import { describeContext, systemPrompt } from './prompt';
 import { AiResponseSchema, toOp, toWhen, zodMessage, type AiResponse } from './schema';
@@ -39,6 +39,15 @@ export class ConductorError extends Error {
   }
 }
 
+export interface AskOptions {
+  /** quem pediu (aparece em "agendado" e no log da sessão) */
+  source?: Source;
+  /** só estas ops são aceitas (piloto automático); outras voltam como erro para a IA */
+  allowedOps?: ReadonlySet<string>;
+  /** guardar na memória de conversa (padrão: sim) */
+  remember?: boolean;
+}
+
 const MAX_ATTEMPTS = 2;
 /** pares pedido/resposta lembrados, para "volta como estava", "mais um pouco" etc. */
 const MEMORY = 4;
@@ -51,7 +60,7 @@ export class Conductor {
     private chat: ChatFn,
   ) {}
 
-  async ask(text: string): Promise<AskResult> {
+  async ask(text: string, opts: AskOptions = {}): Promise<AskResult> {
     const snap = this.timeline.snapshot();
     const context = describeContext(this.timeline.stateAt(Infinity), this.timeline.now(), snap.playing, snap.pending);
     const messages: ChatMessage[] = [
@@ -70,14 +79,14 @@ export class Conductor {
       latencyMs += res.latencyMs;
       tokens += res.usage?.total_tokens ?? 0;
 
-      const parsed = parse(res.content);
+      const parsed = parse(res.content, opts.allowedOps);
       if (!parsed.ok) {
         lastError = parsed.error;
       } else {
         if (parsed.value.undo && undone === undefined) undone = await this.timeline.undo();
-        const outcome = await this.execute(parsed.value);
+        const outcome = await this.execute(parsed.value, opts.source ?? 'ai');
         if (outcome.ok) {
-          this.remember(text, res.content);
+          if (opts.remember !== false) this.remember(text, res.content);
           return {
             reply: parsed.value.reply,
             scheduled: outcome.scheduled,
@@ -101,6 +110,7 @@ export class Conductor {
 
   private async execute(
     resp: AiResponse,
+    source: Source,
   ): Promise<{ ok: true; scheduled: Scheduled[] } | { ok: false; error: string }> {
     const group = this.timeline.newGroup();
     const scheduled: Scheduled[] = [];
@@ -113,7 +123,7 @@ export class Conductor {
           plan.ops.map(toOp),
           toWhen(plan.when, previous, nextBar),
           plan.label || resp.reply.slice(0, 60),
-          { source: 'ai', group, revertAfterBars: plan.forBars },
+          { source, group, revertAfterBars: plan.forBars },
         );
         previous = cycle ?? previous;
         scheduled.push({ cycle, label: plan.label });
@@ -132,7 +142,7 @@ export class Conductor {
   }
 }
 
-function parse(content: string): { ok: true; value: AiResponse } | { ok: false; error: string } {
+function parse(content: string, allowed?: ReadonlySet<string>): { ok: true; value: AiResponse } | { ok: false; error: string } {
   let json: unknown;
   try {
     json = extractJson(content);
@@ -140,5 +150,10 @@ function parse(content: string): { ok: true; value: AiResponse } | { ok: false; 
     return { ok: false, error: `JSON inválido (${(e as Error).message})` };
   }
   const r = AiResponseSchema.safeParse(json);
-  return r.success ? { ok: true, value: r.data } : { ok: false, error: `formato inválido: ${zodMessage(r.error)}` };
+  if (!r.success) return { ok: false, error: `formato inválido: ${zodMessage(r.error)}` };
+  if (allowed) {
+    const bad = [...new Set(r.data.plans.flatMap((p) => p.ops.map((o) => o.op)).filter((op) => !allowed.has(op)))];
+    if (bad.length) return { ok: false, error: `operações não permitidas agora: ${bad.join(', ')} (permitidas: ${[...allowed].join(', ')})` };
+  }
+  return { ok: true, value: r.data };
 }

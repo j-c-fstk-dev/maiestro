@@ -11,8 +11,10 @@ import {
   panic,
   play,
   run,
+  setAutonomy,
   setTarget,
   stop,
+  tierLabel,
   toggleMute,
   togglePlay,
   toggleRecording,
@@ -189,6 +191,7 @@ function Mixer({ mix, playing, now }: { mix: MixState; playing: boolean; now: nu
           {t ? `${t.style} ${t.from}→${t.to} · ${Math.round(x * 100)}% · faltam ${Math.max(0, Math.ceil(t.start + t.bars - now))}c` : `no ar: deck ${mix.live}`}
         </span>
       </div>
+      <AutoControl />
       {playing && !t && (
         <div className="row">
           <span className="dim">transição para o deck {mix.live === 'A' ? 'B' : 'A'} (na próxima frase):</span>
@@ -200,6 +203,30 @@ function Mixer({ mix, playing, now }: { mix: MixState; playing: boolean; now: nu
         </div>
       )}
     </section>
+  );
+}
+
+function AutoControl() {
+  // dois seletores: um objeto novo a cada leitura faria o Zustand renderizar em loop
+  const auto = useUi((s) => s.auto);
+  const ai = useUi((s) => s.ai);
+  const tokens = ai.tokens + auto.stats.aiTokens;
+  return (
+    <div className="row auto">
+      <label className="auto-label" title="o quanto o maestro muda a música sozinho (/auto 0-100)">
+        piloto automático
+        <input type="range" min={0} max={100} step={5} value={auto.autonomy} onChange={(e) => setAutonomy(Number(e.target.value))} />
+        <b className={auto.autonomy ? 'live' : 'dim'}>{auto.autonomy}%</b>
+      </label>
+      <span className="dim">
+        {tierLabel(auto.autonomy)}
+        {auto.autonomy > 0 && !auto.useAi && ' · sem IA'}
+        {auto.busy && ' · pensando…'}
+      </span>
+      <span className="dim stats" title="movimentos do piloto (IA / locais), trocas de música, e uso total da IA">
+        auto: {auto.stats.aiMoves} IA · {auto.stats.localMoves} locais · {auto.stats.rotations} trocas │ IA: {ai.calls + auto.stats.aiMoves} chamadas · {(tokens / 1000).toFixed(1)}k tokens
+      </span>
+    </div>
   );
 }
 

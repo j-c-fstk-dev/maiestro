@@ -420,9 +420,18 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - **Teste no navegador** (IA simulada): "prepara um melodic techno a 122 no outro deck e mixa com troca de graves" → B carregado no compasso 2, transição bass_swap 8–24, BPM 160 → 141 (meio) → 122, deck B no ar no fim, sem erros.
 - **Limitações:** não há pré-escuta (fone) do deck preparado — só uma saída de áudio; o crossfader não é arrastável à mão (só transições agendadas).
 
-### Fase 5 — Autonomia
-- [ ] Autopilot com faixas de autonomia, contador de chamadas/custo.
+### Fase 5 — Autonomia ✅ (falta a validação de ouvido com a IA de verdade)
+- [x] Autopilot com faixas de autonomia, contador de chamadas/custo.
 - **Pronto quando:** a 100% ele toca 30 min sozinho, variando e trocando de música de forma coerente.
+
+**Como ficou (2026-10-25):**
+- **`src/autopilot/autopilot.ts`:** decide uma vez por frase (no compasso 1–3 dela, para a IA ter tempo de responder antes do próximo limite). Chance por frase = autonomia × 0,5 (100% ≈ uma mudança a cada 2 frases).
+- **Níveis:** 1–30% *detalhes* (padrão de ritmo, respiro de camada, filtro, eco) · 31–70% *+ camadas e estrutura* (timbre, entrar/sair camada, build/drop, breakdown, mood) · 71–100% *+ tom, BPM e troca de música* — depois de 96–160 compassos no ar, prepara o outro deck com outro estilo e faz a transição na próxima seção.
+- **IA com rédea curta:** o pedido interno lista só as ops do nível (`Conductor.ask(..., { allowedOps })`); op fora do nível volta como erro para a IA. O piloto usa **um maestro só dele** (memória separada da conversa com o usuário) e as mudanças aparecem com origem `auto`.
+- **Variações locais** (`moves.ts`, sem IA, sempre válidas) quando: IA desligada (`/auto ia off`), dentro do intervalo mínimo entre chamadas (20 s, por causa do limite do plano grátis), ou a IA falhou. Depois de 3 falhas seguidas, o piloto desliga a IA sozinho e avisa.
+- **Respeita o usuário:** 16 compassos de silêncio depois de qualquer comando/pedido; não age com mudança do usuário agendada, nem durante transições.
+- **Controle:** slider na área do mixer (ou `/auto 0-100`, `/auto off`, `/auto ia on|off`); contadores de movimentos (IA/locais), trocas de música, chamadas e tokens de IA (usuário + piloto).
+- **Prova dos 30 minutos** (`autopilot.test.ts`): 960 compassos simulados a 100% sem IA, semente fixa — sem nenhum erro, ≥5 trocas de música, ≥40 variações, ≥3 estilos diferentes, e **todo código gerado avaliado pelo Strudel de verdade**.
 
 ### Fase 6 — Polimento e som
 - [ ] Biblioteca de samples própria (vocais, texturas), mais estilos, cenas salvas, painel de código.
@@ -490,6 +499,10 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 27 | 2026-10-25 | Transições como envelopes em `postgain`/`djf` e orbits separados por deck | Não mexe nos ganhos/filtros das camadas; decks não brigam por efeito |
 | 28 | 2026-10-25 | `bass_swap` no lugar do `breakdown_drop` previsto | Troca de graves é a transição de DJ mais comum; breakdown/drop já dá com insert_sections + enterAt |
 | 29 | 2026-10-25 | Crossfader só por transições agendadas (sem arrastar) | Mudanças entram por limites musicais; arrastar exigiria trocas fora do compasso |
+| 30 | 2026-10-25 | Piloto decide 1x por frase; chance = autonomia × 0,5 | Ritmo de mudança musical (não frenético); previsível de ajustar |
+| 31 | 2026-10-25 | Ops permitidas por nível, validadas no Conductor | O nível de autonomia é garantido pelo código, não só pelo prompt |
+| 32 | 2026-10-25 | Variações locais como reserva (e modo sem IA) | O piloto nunca para por causa de rede/limite/chave; plano grátis aguenta |
+| 33 | 2026-10-25 | Maestro separado para o piloto | Pedidos internos não poluem a memória da conversa do usuário |
 
 ---
 

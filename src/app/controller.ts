@@ -7,6 +7,7 @@ import { OpError } from '../song/ops';
 import type { LayerId } from '../song/types';
 import { createMix, liveDeck, type DeckId } from '../song/mix';
 import { Conductor, ConductorError } from '../conductor/conductor';
+import { Autopilot, tierOf, type AutopilotStats } from '../autopilot/autopilot';
 import { chat } from '../conductor/llmClient';
 import { Recorder } from '../recorder/recorder';
 import { SessionLog, type SessionFile } from '../recorder/sessionLog';
@@ -33,6 +34,10 @@ interface UiState {
   thinking: string | null;
   /** deck que os comandos e cliques editam */
   target: DeckId;
+  /** piloto automático */
+  auto: { autonomy: number; useAi: boolean; stats: AutopilotStats; busy: boolean };
+  /** uso da IA pelos pedidos do usuário */
+  ai: { calls: number; tokens: number };
   /** gravação em andamento */
   rec: { seconds: number; bytes: number; peak: number } | null;
   recordings: Recording[];
@@ -71,11 +76,38 @@ export const useUi = create<UiState>(() => ({
   loading: false,
   thinking: null,
   target: 'A',
+  auto: { autonomy: 0, useAi: true, stats: { aiMoves: 0, localMoves: 0, aiTokens: 0, rotations: 0 }, busy: false },
+  ai: { calls: 0, tokens: 0 },
   rec: null,
   recordings: [],
 }));
 
 export const conductor = new Conductor(timeline, chat);
+
+// o piloto tem um maestro só dele (memória separada da conversa com o usuário)
+export const autopilot = new Autopilot(timeline, new Conductor(timeline, chat), {
+  onEvent: (e) => {
+    log(`auto: ${e.rotation ? '♪ troca de música — ' : ''}${e.text}`, e.kind === 'error' ? 'warn' : 'ai');
+    syncAuto();
+  },
+});
+
+function syncAuto() {
+  useUi.setState({
+    auto: { autonomy: autopilot.autonomy, useAi: autopilot.useAi, stats: { ...autopilot.stats }, busy: autopilot.busy },
+  });
+}
+
+export function setAutonomy(value: number) {
+  autopilot.autonomy = Math.max(0, Math.min(100, Math.round(value)));
+  syncAuto();
+}
+
+const TIER_LABEL = { micro: 'detalhes', medium: 'camadas e estrutura', large: 'tudo, inclusive trocar de música' } as const;
+export const tierLabel = (autonomy: number) => {
+  const t = tierOf(autonomy);
+  return t ? TIER_LABEL[t] : 'desligado';
+};
 
 // quando o deck no ar muda (fim de transição), a seleção acompanha se estava no deck que saiu
 timeline.subscribe((snap) =>
@@ -85,6 +117,11 @@ timeline.subscribe((snap) =>
   })),
 );
 setInterval(() => timeline.tick(), 50);
+setInterval(() => {
+  const was = autopilot.busy;
+  void autopilot.tick().catch((err) => log(`erro no piloto automático: ${(err as Error).message}`, 'err'));
+  if (autopilot.busy !== was) syncAuto();
+}, 100);
 
 export function log(text: string, kind: LogKind = 'info') {
   const bar = engine.isPlaying ? `c${Math.max(0, Math.floor(engine.now()))} ` : '';
@@ -150,6 +187,8 @@ export async function run(input: string) {
   const text = input.trim();
   if (!text) return;
   log(text, 'cmd');
+  // o piloto automático dá a vez para o usuário
+  if (!/^\/(auto|list|help|code|clear|rec|deck)\b/.test(text)) autopilot.noteUser();
   if (text.startsWith('/') && !/^\/rec(ord)?\b/.test(text)) session({ type: 'command', text });
   try {
     // comandos usam o estado mais recente (incluindo o que já está agendado)
@@ -161,6 +200,18 @@ export async function run(input: string) {
         return undo();
       case 'rec':
         return toggleRecording();
+      case 'auto': {
+        if (cmd.ai !== undefined) {
+          autopilot.useAi = cmd.ai;
+          syncAuto();
+          log(`piloto automático ${cmd.ai ? 'usa a IA' : 'só com variações locais (sem IA)'}`, 'ok');
+          return;
+        }
+        if (cmd.autonomy !== undefined) setAutonomy(cmd.autonomy);
+        const a = autopilot.autonomy;
+        log(a ? `piloto automático em ${a}%: ${tierLabel(a)}${autopilot.useAi ? '' : ' (sem IA)'}` : 'piloto automático desligado', 'ok');
+        return;
+      }
       case 'target':
         return setTarget(cmd.deck);
       case 'info':
@@ -212,6 +263,7 @@ async function ask(text: string) {
   useUi.setState({ thinking: text });
   try {
     const r = await conductor.ask(text);
+    useUi.setState((s) => ({ ai: { calls: s.ai.calls + r.attempts, tokens: s.ai.tokens + r.tokens } }));
     session({ type: 'prompt', text, reply: r.reply });
     if (r.undone) log(r.undone, 'warn');
     log(`maestro: ${r.reply || '(sem comentário)'}`, 'ai');

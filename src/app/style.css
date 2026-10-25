@@ -137,3 +137,9 @@ button { font: inherit; color: inherit; }
 .mixer .track { position: relative; width: 160px; flex: none; height: 6px; background: var(--line); }
 /* sem transition CSS: a posição já é atualizada a cada frame (uma transition reiniciada todo frame não sai do lugar) */
 .mixer .knob { position: absolute; top: -5px; width: 12px; height: 16px; background: var(--accent); }
+
+/* piloto automático */
+.auto { margin-top: 8px; }
+.auto-label { display: inline-flex; align-items: center; gap: 8px; }
+.auto-label input[type='range'] { width: 140px; accent-color: var(--accent); }
+.auto .stats { margin-left: auto; font-size: 12px; }
