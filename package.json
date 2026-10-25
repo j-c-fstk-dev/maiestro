@@ -1,0 +1,29 @@
+{
+  "name": "maestro",
+  "version": "1.0.0",
+  "description": "Live coding de música eletrônica com uma IA maestro",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc"
+  },
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "@strudel/core": "^1.2.6",
+    "@strudel/web": "^1.3.0",
+    "@strudel/webaudio": "^1.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "private": true,
+  "type": "module"
+}

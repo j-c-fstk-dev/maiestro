@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MAESTRO · fase 0</title>
+    <link rel="stylesheet" href="/src/spike/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>MAESTRO <span class="dim">// fase 0 · spike técnico</span></h1>
+        <div id="status" class="status">parado</div>
+      </header>
+
+      <section>
+        <h2>1 · motor</h2>
+        <div class="row">
+          <button id="start">▶ tocar A</button>
+          <button id="stop">■ parar</button>
+          <label>BPM <input id="bpm" type="number" value="128" min="60" max="200" /></label>
+          <button id="bpm-apply">aplicar BPM</button>
+        </div>
+        <div class="clock">
+          <span>compasso <b id="bar">—</b></span>
+          <span>tempo <b id="beat">—</b></span>
+          <span>frase(8) <b id="phrase">—</b></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>2 · troca quantizada</h2>
+        <p class="dim">Edite os códigos e troque. O switch acontece exatamente no limite escolhido.</p>
+        <div class="codes">
+          <div>
+            <h3>A</h3>
+            <textarea id="code-a" spellcheck="false"></textarea>
+          </div>
+          <div>
+            <h3>B</h3>
+            <textarea id="code-b" spellcheck="false"></textarea>
+          </div>
+        </div>
+        <div class="row">
+          <button data-switch="a" data-every="1">A no próximo compasso</button>
+          <button data-switch="b" data-every="1">B no próximo compasso</button>
+          <button data-switch="b" data-every="8">B na próxima frase</button>
+          <button data-switch="b" data-every="0">B agora (sem quantizar)</button>
+          <button id="ramp">build: filtro sobe por 8 compassos</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>3 · IA (z.ai via proxy)</h2>
+        <div class="row grow">
+          <input id="prompt" type="text" value="na próxima seção tira o beat, põe um vocal etéreo, faz build e drop e deixa mais sombrio" />
+          <button id="ask">enviar</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>log</h2>
+        <pre id="log"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/spike/main.ts"></script>
+  </body>
+</html>

@@ -298,8 +298,11 @@ Lista **fechada** — a IA só pode usar estas. Cada uma é validada (Zod) e tem
 ```
 LLM_BASE_URL=https://api.z.ai/api/paas/v4
 LLM_API_KEY=...
-LLM_MODEL=glm-5.1        # confirmar id atual
+LLM_MODEL=glm-4.7-flash   # modelo gratuito da z.ai
+LLM_JSON_MODE=true
+LLM_EXTRA_BODY={"thinking":{"type":"disabled"}}
 ```
+Ver `.env.example`.
 
 ---
 
@@ -333,12 +336,20 @@ maestro/
 
 Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que precisa funcionar.
 
-### Fase 0 — Spike técnico (validar riscos) 
-- [ ] Vite + TS + `@strudel/web` tocando um padrão techno escrito à mão.
-- [ ] Trocar o código no limite do compasso sem engasgo (medir precisão).
-- [ ] Rampa de filtro via sinal ancorado num ciclo.
-- [ ] Chamada à z.ai via proxy retornando JSON válido.
+### Fase 0 — Spike técnico (validar riscos) ✅ (falta só o teste real da z.ai)
+- [x] Vite + TS + `@strudel/web` tocando um padrão techno escrito à mão.
+- [x] Trocar o código no limite do compasso sem engasgo (medir precisão).
+- [x] Rampa de filtro via sinal ancorado num ciclo.
+- [x] Erro no código não para a música.
+- [ ] Chamada à z.ai via proxy retornando JSON válido — proxy pronto e testado sem chave; falta rodar com a chave real.
 - **Pronto quando:** sabemos que trocar no limite funciona (ou qual é o plano B).
+
+**Resultados (2026-10-25):**
+- A troca quantizada é **exata no tempo musical**: em vez de chamar `evaluate()` no limite, o engine avalia o código novo na hora e o envolve com `switchAt(antigo, novo, ciclo)` (`src/engine/switchAt.ts`). O pattern resultante responde ao scheduler com o antigo antes do ciclo e o novo a partir dele, então **não importa quando a avaliação termina**, desde que fique pronta antes do scheduler consultar o limite (~0,35 s de antecedência mínima). Trocas encadeadas funcionam. Depois do limite, o wrapper é removido para a cadeia não crescer.
+- Medido no navegador headless: avaliação ~7 ms; troca agendada caiu exatamente no compasso alvo (padrão A até o ciclo 3, padrão B a partir dele).
+- Rampa de build com `signal(t => …)` ancorado em ciclo absoluto: hpf 20 → 1270 → 2441 Hz ao longo de 8 compassos e drop exato no compasso seguinte. Isso já valida o mecanismo de automações (§7).
+- O "plano B" da §7 não é necessário.
+- Pendências para a Fase 1: mudança de BPM ainda é imediata (não quantizada, sem rampa); o controle `hpf` aparece internamente como `hcutoff` (o compiler deve usar os nomes de controle do Strudel com cuidado).
 
 ### Fase 1 — Um deck tocável (sem IA)
 - [ ] `SongState` + Compiler para 2–3 estilos (techno, house, ambient).
@@ -412,13 +423,17 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 4 | 2026-10-25 | IA emite ops estruturadas (JSON validado), não áudio nem código livre | Robustez: a música nunca quebra |
 | 5 | 2026-10-25 | `SongState` é a fonte da verdade; código Strudel é compilado | Testável, desfazível, permite trocar motor |
 | 6 | 2026-10-25 | Chave do LLM fica num proxy local, nunca no navegador | Segurança |
+| 7 | 2026-10-25 | Modelo padrão `glm-4.7-flash` (plano gratuito da z.ai), "thinking" desligado | Gratuito e com menos latência; trocável no `.env` |
+| 8 | 2026-10-25 | Proxy do LLM como plugin do servidor de dev do Vite (`server/llmProxy.ts`) | Um comando só (`npm run dev`); vira servidor separado se precisar |
+| 9 | 2026-10-25 | Troca quantizada via `switchAt` (corte dentro da consulta do scheduler), não `evaluate()` cronometrado | Precisão exata, independente da latência de avaliação |
+| 10 | 2026-10-25 | Repositório: github.com/j-c-fstk-dev/maiestro | — |
 
 ---
 
 ## 18. Questões em aberto
 
-- Precisão real da troca no limite do compasso no Strudel (Fase 0 responde).
+- ~~Precisão real da troca no limite do compasso no Strudel~~ → resolvido na Fase 0 (`switchAt`).
 - Qual modelo GLM tem melhor custo/qualidade/latência para JSON estruturado? Testar 2–3.
 - Origem dos samples vocais "etéreos" (bancos CC0? gravar? gerar com IA?).
 - Nome definitivo do projeto.
-- Onde hospedar o código (repositório GitHub privado?) — o ambiente de desenvolvimento atual é temporário.
+- ~~Onde hospedar o código~~ → github.com/j-c-fstk-dev/maiestro.

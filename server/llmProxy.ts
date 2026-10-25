@@ -1,0 +1,91 @@
+import type { Plugin } from 'vite';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
+/**
+ * Proxy do LLM. Roda dentro do servidor de desenvolvimento do Vite:
+ * o navegador chama POST /api/llm e a chave fica só aqui (lida do .env).
+ *
+ * Corpo aceito: { messages: [{role, content}], temperature?, json? }
+ * Resposta: { content, model, latencyMs, usage } ou { error }
+ */
+export interface LlmEnv {
+  LLM_BASE_URL?: string;
+  LLM_API_KEY?: string;
+  LLM_MODEL?: string;
+  LLM_JSON_MODE?: string;
+  LLM_EXTRA_BODY?: string;
+}
+
+export function llmProxy(env: LlmEnv): Plugin {
+  return {
+    name: 'maestro-llm-proxy',
+    configureServer(server) {
+      server.middlewares.use('/api/llm', (req, res) => {
+        handle(env, req, res).catch((err) => send(res, 500, { error: String(err?.message ?? err) }));
+      });
+    },
+  };
+}
+
+async function handle(env: LlmEnv, req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== 'POST') return send(res, 405, { error: 'use POST' });
+  if (!env.LLM_API_KEY || env.LLM_API_KEY === 'coloque-sua-chave-aqui') {
+    return send(res, 500, { error: 'LLM_API_KEY não configurada no .env' });
+  }
+
+  const input = JSON.parse(await readBody(req));
+  const baseUrl = (env.LLM_BASE_URL ?? 'https://api.z.ai/api/paas/v4').replace(/\/$/, '');
+  const model = env.LLM_MODEL ?? 'glm-4.7-flash';
+  let extra: Record<string, unknown> = {};
+  if (env.LLM_EXTRA_BODY) {
+    try {
+      extra = JSON.parse(env.LLM_EXTRA_BODY);
+    } catch {
+      return send(res, 500, { error: 'LLM_EXTRA_BODY não é um JSON válido' });
+    }
+  }
+
+  const body = {
+    model,
+    messages: input.messages,
+    temperature: input.temperature ?? 0.4,
+    ...(input.json && env.LLM_JSON_MODE !== 'false' ? { response_format: { type: 'json_object' } } : {}),
+    ...extra,
+  };
+
+  const started = Date.now();
+  const upstream = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.LLM_API_KEY}` },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const latencyMs = Date.now() - started;
+  const text = await upstream.text();
+
+  if (!upstream.ok) {
+    return send(res, upstream.status, { error: `provedor respondeu ${upstream.status}: ${text.slice(0, 500)}` });
+  }
+  const data = JSON.parse(text);
+  send(res, 200, {
+    content: data.choices?.[0]?.message?.content ?? '',
+    model: data.model ?? model,
+    usage: data.usage,
+    latencyMs,
+  });
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => (data += chunk));
+    req.on('end', () => resolve(data || '{}'));
+    req.on('error', reject);
+  });
+}
+
+function send(res: ServerResponse, status: number, payload: unknown) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify(payload));
+}
