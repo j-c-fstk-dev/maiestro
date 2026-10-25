@@ -161,6 +161,8 @@ type When =
 
 Lista **fechada** — a IA só pode usar estas. Cada uma é validada (Zod) e tem limites.
 
+> A lista implementada (fonte da verdade) está em `src/song/ops.ts`. A tabela abaixo é o plano original; `insert_section`, `transition`, `prepare_deck` e rampas de fx ainda vão entrar.
+
 | Op | Exemplo | Efeito |
 |---|---|---|
 | `set_bpm` | `{ op:'set_bpm', bpm:130, rampBars:8 }` | Muda o BPM (com rampa opcional) |
@@ -307,26 +309,24 @@ Ver `.env.example`.
 
 ---
 
-## 13. Estrutura de pastas (proposta)
+## 13. Estrutura de pastas
 
 ```
-maestro/
-├─ docs/
-│  └─ PROJETO.md            ← este documento
-├─ server/                   ← proxy do LLM (guarda a chave)
-│  └─ index.ts
+maiestro/
+├─ docs/PROJETO.md           ← este documento
+├─ server/llmProxy.ts        ← proxy do LLM (plugin do Vite; guarda a chave)
 ├─ src/
-│  ├─ app/                   ← componentes React (terminal, decks, mixer, prompt)
-│  ├─ store/                 ← Zustand: decks, mixer, settings, history
-│  ├─ engine/                ← adapter do Strudel (única parte que conhece o Strudel)
-│  ├─ compiler/              ← SongState → código Strudel (+ testes)
-│  ├─ scheduler/             ← fila quantizada, clock
-│  ├─ conductor/             ← chamada LLM, prompts/, schemas Zod, parsing
-│  │  └─ prompts/
-│  ├─ autopilot/
-│  ├─ recorder/
-│  ├─ presets/               ← estilos, estruturas, instrumentos, padrões, transições
-│  └─ commands/              ← /comandos diretos
+│  ├─ main.tsx
+│  ├─ app/                   ← UI React (App.tsx, style.css) + controller.ts (liga tudo + estado da UI em Zustand)
+│  ├─ song/                  ← types.ts (SongState, Zod), ops.ts (operações + applyOp), time.ts (compassos/seções/"quando")
+│  ├─ presets/               ← instrumentos, padrões, modelos de seção, estilos
+│  ├─ compiler/              ← SongState → código Strudel (+ testes que rodam o Strudel de verdade)
+│  ├─ engine/                ← adapter do Strudel: strudelEngine.ts, switchAt.ts, arrange.ts
+│  ├─ scheduler/             ← timeline.ts: mudanças agendadas por ciclo, rampas de BPM
+│  ├─ commands/              ← /comandos diretos → ops
+│  ├─ conductor/             ← cliente do LLM (Fase 2: prompts, parsing)
+│  ├─ autopilot/             ← (Fase 5)
+│  └─ recorder/              ← (Fase 3)
 ├─ .env.example
 └─ package.json
 ```
@@ -352,12 +352,22 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - O "plano B" da §7 não é necessário.
 - Pendências para a Fase 1: mudança de BPM ainda é imediata (não quantizada, sem rampa); o controle `hpf` aparece internamente como `hcutoff` (o compiler deve usar os nomes de controle do Strudel com cuidado).
 
-### Fase 1 — Um deck tocável (sem IA)
-- [ ] `SongState` + Compiler para 2–3 estilos (techno, house, ambient).
-- [ ] Catálogo inicial: ~8 camadas, ~30 padrões, ~15 instrumentos, efeitos básicos.
-- [ ] Estrutura em loop (seções com overrides: breakdown sem kick, build com hpf subindo).
-- [ ] UI terminal: setup do deck, play/stop, timeline, `/comandos` diretos (`/bpm`, `/mute`, `/key`, `/fx`).
+### Fase 1 — Um deck tocável (sem IA) ✅ (falta a validação de ouvido)
+- [x] `SongState` + Compiler para 4 estilos (techno, house, trance, ambient).
+- [x] Catálogo inicial: 8 camadas, 32 padrões, 16 instrumentos, efeitos básicos.
+- [x] Estrutura em loop (seções com overrides: breakdown sem kick, build com filtro subindo + riser).
+- [x] UI terminal: setup do deck, play/stop, timeline do arranjo, camadas clicáveis, lista de agendados, painel de código, `/comandos` com sufixo de tempo (`@bar`, `@phrase`, `@section`, `@drop`…).
+- [x] BPM agendado e com rampa (`/bpm 132 8`).
 - **Pronto quando:** dá pra montar um techno e deixar tocando 10 minutos soando bem.
+
+**Como ficou (2026-10-25):**
+- **Ops** (`src/song/ops.ts`) são o vocabulário único: os `/comandos` viram ops, e a IA vai emitir as mesmas ops na Fase 2. `applyOp` é puro e valida tudo (camada existe? padrão/instrumento serve pra camada?).
+- **Timeline** (`src/scheduler/timeline.ts`): estado efetivado + lista de mudanças por ciclo. Agendar algo antes de uma mudança já agendada recompila as posteriores (ex.: mute no compasso 18 + troca de tom no 32 → o código do 32 já tem o mute). Mudanças inválidas ou com código quebrado são descartadas sem afetar o som.
+- **Engine**: virou uma linha do tempo de patterns (`efetivado + pendentes`), reconstruída com `switchAt` a cada mudança, então dá pra agendar e cancelar em qualquer ordem. "Pânico" (`Esc`) cancela tudo.
+- **Arranjo**: o código compilado chama `maestroArrange(anchor, [[compassos, stack(...)], ...])`, que escolhe a seção pelo ciclo absoluto. A posição na música sempre vem do relógio; `jump_to`/`set_arrangement` só mudam o `anchor`.
+- **Mood**: escuridão fecha o lpf e abre o reverb das camadas melódicas; energia aumenta o volume da bateria.
+- **Teste no navegador headless:** samples da 909/808 carregam, troca de estilo, tom, salto de seção e mute temporário caem no compasso certo; parar/tocar de novo e rampa de BPM funcionam.
+- **Bug encontrado e corrigido:** o Strudel só carrega os AudioWorklets (supersaw, DJ filter) num clique do mouse; com play pelo teclado eles faltavam. O engine agora carrega no `init`.
 
 ### Fase 2 — IA maestro (o coração)
 - [ ] Conductor + system prompt v1 + schemas Zod + retry.
@@ -428,6 +438,12 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 8 | 2026-10-25 | Proxy do LLM como plugin do servidor de dev do Vite (`server/llmProxy.ts`) | Um comando só (`npm run dev`); vira servidor separado se precisar |
 | 9 | 2026-10-25 | Troca quantizada via `switchAt` (corte dentro da consulta do scheduler), não `evaluate()` cronometrado | Precisão exata, independente da latência de avaliação |
 | 10 | 2026-10-25 | Repositório: github.com/j-c-fstk-dev/maiestro | — |
+| 11 | 2026-10-25 | 8 slots fixos de camada (`kick clap hats perc bass chords lead fx`) | Simples pra UI e pra IA; `vocal` entra quando houver samples |
+| 12 | 2026-10-25 | Padrões melódicos em graus da escala; o compiler aplica tom/escala/oitava | Mudar o tom transpõe tudo de uma vez, sem reescrever padrões |
+| 13 | 2026-10-25 | Filtro master = DJ filter (`djf`) do Strudel; cada grupo de camadas num orbit | `lpf` no stack apagaria o lpf de cada camada; reverb/delay por orbit não brigam |
+| 14 | 2026-10-25 | Arranjo roteado por ciclo absoluto (`maestroArrange`) em vez do `arrange` do Strudel | O `arrange` comprime o tempo das seções; o nosso mantém padrões `<...>` fluindo |
+| 15 | 2026-10-25 | Ops como vocabulário único de comandos e da IA | Um só caminho de validação/agendamento |
+| 16 | 2026-10-25 | Página de testes da Fase 0 removida (está no histórico do git) | A UI da Fase 1 cobre os mesmos testes |
 
 ---
 

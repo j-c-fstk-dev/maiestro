@@ -10,3 +10,6 @@ Regras rápidas:
 - Só `src/engine/` e `src/compiler/` conhecem o Strudel.
 - A chave do LLM fica no `.env` do proxy (`server/`), nunca no navegador.
 - Decisões novas entram na seção ADR do `docs/PROJETO.md`.
+
+Comandos: `npm run dev` · `npm test` · `npm run typecheck`.
+Fluxo: comando/IA → ops (`src/song/ops.ts`) → `Timeline.schedule` (`src/scheduler`) → `compile` (`src/compiler`) → `StrudelEngine.schedule` (`src/engine`).
