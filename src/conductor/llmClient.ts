@@ -9,6 +9,8 @@ export interface LlmResult {
   content: string;
   model: string;
   latencyMs: number;
+  /** quantas vezes o proxy repetiu por limite de taxa (429) */
+  retries?: number;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 

@@ -239,6 +239,7 @@ Lista **fechada** — a IA só pode usar estas. Cada uma é validada (Zod) e tem
   - **71–100%**: + mudar tom/mood, preparar o deck B sozinho e fazer transições → "rádio infinita".
 - Regras: comandos do usuário pendentes bloqueiam o Autopilot; toda ação automática aparece no log com origem `autopilot`; existe "desfazer última mudança".
 - Custo: mais autonomia = mais chamadas de API. Mostrar contador de chamadas/tokens na UI.
+- **Limite de taxa:** os modelos Flash gratuitos da z.ai (`glm-4.7-flash`, `glm-4.5-flash`) não cobram, mas limitam requisições por minuto. O proxy já repete em caso de 429 (até 3x, respeitando `Retry-After`). O Autopilot precisa de um intervalo mínimo entre chamadas e deve ceder a vez quando houver comando do usuário.
 
 ---
 

@@ -6,11 +6,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
  * o navegador chama POST /api/llm e a chave fica só aqui (lida do .env).
  *
  * Corpo aceito: { messages: [{role, content}], temperature?, json? }
- * Resposta: { content, model, latencyMs, usage } ou { error }
+ * Resposta: { content, model, latencyMs, usage, retries } ou { error }
  */
 export interface LlmEnv {
   LLM_BASE_URL?: string;
   LLM_API_KEY?: string;
+  /** alternativa a LLM_API_KEY (nome usado na doc da z.ai) */
+  ZAI_API_KEY?: string;
   LLM_MODEL?: string;
   LLM_JSON_MODE?: string;
   LLM_EXTRA_BODY?: string;
@@ -29,8 +31,9 @@ export function llmProxy(env: LlmEnv): Plugin {
 
 async function handle(env: LlmEnv, req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST') return send(res, 405, { error: 'use POST' });
-  if (!env.LLM_API_KEY || env.LLM_API_KEY === 'coloque-sua-chave-aqui') {
-    return send(res, 500, { error: 'LLM_API_KEY não configurada no .env' });
+  const apiKey = env.LLM_API_KEY || env.ZAI_API_KEY;
+  if (!apiKey || apiKey === 'coloque-sua-chave-aqui') {
+    return send(res, 500, { error: 'LLM_API_KEY (ou ZAI_API_KEY) não configurada no .env' });
   }
 
   const input = JSON.parse(await readBody(req));
@@ -54,12 +57,21 @@ async function handle(env: LlmEnv, req: IncomingMessage, res: ServerResponse) {
   };
 
   const started = Date.now();
-  const upstream = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.LLM_API_KEY}` },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
-  });
+  let upstream: Response;
+  let retries = 0;
+  // os modelos Flash gratuitos têm limite de requisições por minuto: em 429, espera e tenta de novo
+  for (;;) {
+    upstream = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (upstream.status !== 429 || retries >= MAX_RETRIES) break;
+    const retryAfter = Number(upstream.headers.get('retry-after'));
+    await sleep(retryAfter > 0 ? Math.min(retryAfter, 10) * 1000 : 1000 * 2 ** retries);
+    retries++;
+  }
   const latencyMs = Date.now() - started;
   const text = await upstream.text();
 
@@ -72,8 +84,12 @@ async function handle(env: LlmEnv, req: IncomingMessage, res: ServerResponse) {
     model: data.model ?? model,
     usage: data.usage,
     latencyMs,
+    retries,
   });
 }
+
+const MAX_RETRIES = 3;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
