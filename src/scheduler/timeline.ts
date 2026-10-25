@@ -1,6 +1,6 @@
 import { compile } from '../compiler/compile';
-import { applyOp, type Op } from '../song/ops';
-import { resolveWhen, type When } from '../song/time';
+import { applyOp, inverseOps, type Op } from '../song/ops';
+import { PHRASE_BARS, positionAt, type When } from '../song/time';
 import type { SongState } from '../song/types';
 
 /**
@@ -8,6 +8,7 @@ import type { SongState } from '../song/types';
  * (cada uma num ciclo). O estado num ciclo qualquer = efetivado + mudanças até ali.
  * A cada agendamento, recompila os estados afetados e entrega ao motor.
  *
+ * Mudanças pertencem a um grupo (um comando ou um pedido à IA), que é a unidade do "desfazer".
  * Não conhece o Strudel: fala com o motor pela interface EngineLike.
  */
 
@@ -26,10 +27,19 @@ export type Source = 'user' | 'ai' | 'autopilot';
 
 export interface Entry {
   id: number;
+  group: number;
   cycle: number;
   ops: Op[];
   label: string;
   source: Source;
+}
+
+export interface ScheduleOptions {
+  source?: Source;
+  /** agrupa com outras mudanças (desfazer desfaz o grupo inteiro) */
+  group?: number;
+  /** desfaz estas ops sozinho depois de N compassos (ex.: "tira o beat por 8 compassos") */
+  revertAfterBars?: number;
 }
 
 interface BpmRamp {
@@ -37,6 +47,12 @@ interface BpmRamp {
   to: number;
   start: number;
   bars: number;
+}
+
+interface HistoryItem {
+  group: number;
+  label: string;
+  before: SongState;
 }
 
 export interface TimelineSnapshot {
@@ -49,7 +65,9 @@ export interface TimelineSnapshot {
 export class Timeline {
   private committed: SongState;
   private pending: Entry[] = [];
+  private history: HistoryItem[] = [];
   private nextId = 1;
+  private nextGroup = 1;
   private ramp: BpmRamp | null = null;
   private listeners = new Set<(s: TimelineSnapshot) => void>();
   private onError: (msg: string) => void;
@@ -79,14 +97,55 @@ export class Timeline {
     return this.committed;
   }
 
+  get playing() {
+    return this.engine.isPlaying;
+  }
+
+  now() {
+    return this.engine.now();
+  }
+
+  newGroup() {
+    return this.nextGroup++;
+  }
+
   /** Estado em vigor no ciclo `cycle` (efetivado + pendentes até ali). */
   stateAt(cycle: number): SongState {
     return this.pending.filter((e) => e.cycle <= cycle).reduce((s, e) => applyAll(s, e.ops, e.cycle), this.committed);
   }
 
+  /**
+   * Converte um "quando" no ciclo do próximo limite, olhando o arranjo como ele
+   * estará naquele momento (inclui seções inseridas por mudanças já agendadas).
+   */
+  resolve(when: When): number {
+    const min = this.engine.minCycle();
+    switch (when.at) {
+      case 'cycle':
+        return Math.max(when.cycle, Math.ceil(min));
+      case 'bar':
+        return Math.ceil(min);
+      case 'phrase':
+        return Math.ceil(min / PHRASE_BARS) * PHRASE_BARS;
+      case 'section':
+      case 'section_type': {
+        let c = Math.ceil(min);
+        for (let guard = 0; guard < 64; guard++) {
+          const p = positionAt(this.stateAt(c), c);
+          const isStart = p.barInSection === 0;
+          if (isStart && (when.at === 'section' || p.section.type === when.type)) return c;
+          c = isStart ? c + p.section.bars : p.startCycle + p.section.bars;
+        }
+        // não achou (ex.: o arranjo não tem esse tipo): cai no próximo início de seção
+        return this.resolve({ at: 'section' });
+      }
+    }
+  }
+
   async play(state: SongState = this.committed) {
     this.committed = { ...state, anchor: 0 };
     this.pending = [];
+    this.history = [];
     this.ramp = null;
     this.engine.setBpm(this.committed.bpm);
     const ok = await this.engine.play(compile(this.committed));
@@ -107,20 +166,89 @@ export class Timeline {
    * Agenda ops para um momento musical. Parado: aplica direto no rascunho.
    * Lança OpError se as ops não fizerem sentido no estado daquele momento.
    */
-  async schedule(ops: Op[], when: When, label: string, source: Source = 'user'): Promise<number | null> {
+  async schedule(ops: Op[], when: When, label: string, opts: ScheduleOptions = {}): Promise<number | null> {
+    const group = opts.group ?? this.newGroup();
     if (!this.engine.isPlaying) {
+      const before = this.committed;
       this.committed = applyAll(this.committed, ops, 0);
+      this.history.push({ group, label, before });
       this.emit();
       return null;
     }
-    const min = this.engine.minCycle();
-    const cycle = resolveWhen(this.stateAt(min), when, min);
-    applyAll(this.stateAt(cycle), ops, cycle); // valida antes de agendar (lança OpError)
+    const cycle = this.resolve(when);
+    const before = this.stateAt(cycle);
+    applyAll(before, ops, cycle); // valida antes de agendar (lança OpError)
 
-    this.pending = [...this.pending, { id: this.nextId++, cycle, ops, label, source }].sort((a, b) => a.cycle - b.cycle);
+    const source = opts.source ?? 'user';
+    const add = (c: number, o: Op[], l: string) =>
+      this.pending.push({ id: this.nextId++, group, cycle: c, ops: o, label: l, source });
+    add(cycle, ops, label);
+
+    // seções inseridas tocam uma vez: no fim delas, o arranjo original volta
+    for (const op of ops) {
+      if (op.op === 'insert_sections') {
+        const bars = op.sections.reduce((a, s) => a + s.bars, 0);
+        add(cycle + bars, [{ op: 'remove_sections', count: op.sections.length }], 'arranjo segue de onde estava');
+      }
+    }
+    if (opts.revertAfterBars) {
+      const inv = inverseOps(before, ops);
+      if (inv.length) add(cycle + opts.revertAfterBars, inv, `volta: ${label}`);
+    }
+    this.pending.sort((a, b) => a.cycle - b.cycle || a.id - b.id);
+
     await this.reschedule(cycle);
     this.emit();
     return cycle;
+  }
+
+  /** Remove todas as mudanças pendentes de um grupo. */
+  async cancelGroup(group: number) {
+    const removed = this.pending.filter((e) => e.group === group);
+    if (!removed.length) return;
+    const from = Math.min(...removed.map((e) => e.cycle));
+    this.pending = this.pending.filter((e) => e.group !== group);
+    this.engine.cancelPending(from);
+    await this.reschedule(from);
+    this.emit();
+  }
+
+  /**
+   * Desfaz o último grupo: se ainda não tocou, cancela; se já tocou (mesmo que em parte),
+   * cancela o resto e volta ao estado de antes dele no próximo compasso.
+   */
+  async undo(): Promise<string | null> {
+    const lastPending = this.pending.reduce((m, e) => Math.max(m, e.group), 0);
+    const lastApplied = this.history[this.history.length - 1];
+    if (!lastPending && !lastApplied) return null;
+
+    if (lastPending > (lastApplied?.group ?? 0)) {
+      const label = this.pending.find((e) => e.group === lastPending)!.label;
+      await this.cancelGroup(lastPending);
+      return `cancelado: ${label}`;
+    }
+    this.history.pop();
+    await this.cancelGroup(lastApplied.group);
+    if (!this.engine.isPlaying) {
+      this.committed = lastApplied.before;
+      this.emit();
+      return `desfeito: ${lastApplied.label}`;
+    }
+    // volta ao estado anterior por inteiro (o arranjo volta para onde estaria sem a mudança,
+    // porque a posição vem do relógio); mudanças agendadas depois continuam valendo por cima
+    const cycle = this.resolve({ at: 'bar' });
+    this.pending.push({
+      id: this.nextId++,
+      group: this.newGroup(),
+      cycle,
+      ops: [{ op: 'restore', state: lastApplied.before }],
+      label: `desfazer: ${lastApplied.label}`,
+      source: 'user',
+    });
+    this.pending.sort((a, b) => a.cycle - b.cycle || a.id - b.id);
+    await this.reschedule(cycle);
+    this.emit();
+    return `desfazendo: ${lastApplied.label}`;
   }
 
   /** Cancela tudo que está agendado. */
@@ -137,15 +265,21 @@ export class Timeline {
     let changed = false;
     while (this.pending.length && this.pending[0].cycle <= now) {
       const e = this.pending.shift()!;
-      const before = this.committed.bpm;
+      const before = this.committed;
+      if (!this.history.some((h) => h.group === e.group) && !e.ops.some((o) => o.op === 'restore')) {
+        this.history.push({ group: e.group, label: e.label, before });
+        if (this.history.length > 50) this.history.shift();
+      }
       this.committed = applyAll(this.committed, e.ops, e.cycle);
       const bpmOp = e.ops.find((o) => o.op === 'set_bpm');
       if (bpmOp && bpmOp.op === 'set_bpm') {
-        if (bpmOp.rampBars) this.ramp = { from: before, to: bpmOp.bpm, start: e.cycle, bars: bpmOp.rampBars };
+        if (bpmOp.rampBars) this.ramp = { from: before.bpm, to: bpmOp.bpm, start: e.cycle, bars: bpmOp.rampBars };
         else {
           this.ramp = null;
           this.engine.setBpm(bpmOp.bpm);
         }
+      } else if (this.committed.bpm !== before.bpm) {
+        this.engine.setBpm(this.committed.bpm); // load/restore trocam o BPM sem set_bpm
       }
       changed = true;
       this.onApplied(e);

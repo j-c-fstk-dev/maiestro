@@ -1,41 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Timeline, type EngineLike } from './timeline';
+import { Timeline } from './timeline';
+import { FakeEngine } from '../test/fakeEngine';
 import { STYLES } from '../presets/styles';
 import { OpError } from '../song/ops';
-
-class FakeEngine implements EngineLike {
-  isPlaying = false;
-  cycle = 0;
-  bpm = 0;
-  scheduled: { cycle: number; code: string }[] = [];
-  played: string[] = [];
-  failCode: ((code: string) => boolean) | null = null;
-  now() {
-    return this.cycle;
-  }
-  minCycle() {
-    return this.cycle + 0.1;
-  }
-  async play(code: string) {
-    this.isPlaying = true;
-    this.played.push(code);
-    return true;
-  }
-  async schedule(code: string, cycle: number) {
-    if (this.failCode?.(code)) return false;
-    this.scheduled = [...this.scheduled.filter((s) => s.cycle !== cycle), { cycle, code }];
-    return true;
-  }
-  cancelPending(from = -Infinity) {
-    this.scheduled = this.scheduled.filter((s) => s.cycle < from);
-  }
-  stop() {
-    this.isPlaying = false;
-  }
-  setBpm(bpm: number) {
-    this.bpm = bpm;
-  }
-}
 
 const setup = async () => {
   const engine = new FakeEngine();
@@ -111,5 +78,78 @@ describe('Timeline', () => {
     await tl.schedule([{ op: 'set_gain', layer: 'bass', gain: 0.3 }], { at: 'bar' }, 'g');
     expect(tl.state.layers.bass!.gain).toBe(0.3);
     expect(engine.scheduled).toEqual([]);
+  });
+});
+
+describe('Timeline — Fase 2', () => {
+  it('"quando" musical em ciclos', async () => {
+    const { engine, tl } = await setup();
+    engine.cycle = 3.2; // techno: intro 16, verse 16, build 8, drop 32…
+    expect(tl.resolve({ at: 'bar' })).toBe(4);
+    expect(tl.resolve({ at: 'phrase' })).toBe(8);
+    expect(tl.resolve({ at: 'section' })).toBe(16);
+    expect(tl.resolve({ at: 'section_type', type: 'drop' })).toBe(40);
+  });
+
+  it('insert_sections toca uma vez e o arranjo volta de onde estava', async () => {
+    const { engine, tl } = await setup();
+    engine.cycle = 3.2;
+    const sections = [
+      { type: 'build' as const, bars: 8, mute: ['kick' as const], rise: true },
+      { type: 'drop' as const, bars: 16, mute: [] },
+    ];
+    const c = await tl.schedule([{ op: 'insert_sections', sections }], { at: 'section' }, 'build+drop');
+    expect(c).toBe(16);
+    // o "próximo drop" agora é o inserido, não o do arranjo original
+    expect(tl.resolve({ at: 'section_type', type: 'drop' })).toBe(24);
+    const types = (cycle: number) => {
+      const s = tl.stateAt(cycle);
+      const idx = s.arrangement.findIndex((_, i) => {
+        const start = s.arrangement.slice(0, i).reduce((a, x) => a + x.bars, 0) + s.anchor;
+        return cycle >= start && cycle < start + s.arrangement[i].bars;
+      });
+      return s.arrangement[idx]?.type;
+    };
+    expect(types(16)).toBe('build');
+    expect(types(24)).toBe('drop');
+    // depois das seções inseridas, volta ao que viria no compasso 16 do original (verse)
+    expect(types(40)).toBe('verse');
+    expect(tl.stateAt(40).arrangement.length).toBe(STYLES[0].build().arrangement.length);
+  });
+
+  it('revertAfterBars desfaz sozinho', async () => {
+    const { engine, tl } = await setup();
+    await tl.schedule([{ op: 'mute', layer: 'kick' }, { op: 'set_mood', darkness: 0.9 }], { at: 'bar' }, 'x', { revertAfterBars: 8 });
+    expect(tl.stateAt(1).layers.kick!.muted).toBe(true);
+    expect(tl.stateAt(9).layers.kick!.muted).toBe(false);
+    expect(tl.stateAt(9).mood.darkness).toBe(0.4);
+    expect(engine.scheduled.map((s) => s.cycle).sort((a, b) => a - b)).toEqual([1, 9]);
+  });
+
+  it('desfazer: cancela o que não tocou; o que tocou volta ao estado anterior', async () => {
+    const { engine, tl } = await setup();
+    await tl.schedule([{ op: 'mute', layer: 'bass' }], { at: 'bar' }, 'a');
+    await tl.schedule([{ op: 'mute', layer: 'lead' }], { at: 'phrase' }, 'b');
+    expect(await tl.undo()).toMatch(/cancelado: b/);
+    expect(tl.snapshot().pending.map((e) => e.label)).toEqual(['a']);
+
+    engine.cycle = 1.5;
+    tl.tick();
+    expect(tl.state.layers.bass!.muted).toBe(true);
+    expect(await tl.undo()).toMatch(/desfazendo: a/);
+    engine.cycle = 2.1;
+    tl.tick();
+    expect(tl.state.layers.bass!.muted).toBe(false);
+  });
+
+  it('cancelGroup remove o grupo e reagenda o resto', async () => {
+    const { engine, tl } = await setup();
+    const g = tl.newGroup();
+    await tl.schedule([{ op: 'mute', layer: 'bass' }], { at: 'bar' }, 'a', { group: g });
+    await tl.schedule([{ op: 'mute', layer: 'lead' }], { at: 'phrase' }, 'b');
+    await tl.cancelGroup(g);
+    expect(tl.snapshot().pending.map((e) => e.label)).toEqual(['b']);
+    expect(engine.scheduled.map((s) => s.cycle)).toEqual([8]);
+    expect(engine.scheduled[0].code).not.toContain('reese'); // b ainda muta só o lead; o bass voltou
   });
 });

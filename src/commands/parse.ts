@@ -20,10 +20,11 @@ import {
  */
 
 export type Command =
-  | { kind: 'ops'; ops: Op[]; when: When; label: string; revert?: { ops: Op[]; afterBars: number; label: string } }
+  | { kind: 'ops'; ops: Op[]; when: When; label: string; revertAfterBars?: number }
   | { kind: 'play'; style?: string }
   | { kind: 'stop' }
   | { kind: 'panic' }
+  | { kind: 'undo' }
   | { kind: 'code' }
   | { kind: 'clear' }
   | { kind: 'info'; text: string }
@@ -48,9 +49,10 @@ export const HELP = `comandos (sufixo opcional @bar @phrase @section @<seção>,
   /reverb <0-1>   /volume <0-1.5>
   /mood dark <0-1>  ·  /mood energy <0-1>
   /arr intro:16 build:8 drop:32   novo arranjo (padrão @section)
+  /insert build:8 drop:16   toca essas seções uma vez e volta ao arranjo (padrão @section)
   /goto <seção>             pular para a próxima seção desse tipo (padrão @phrase)
   /list styles | layers | patterns <camada> | insts <camada>
-  /panic (ou Esc)  cancela tudo que está agendado
+  /undo (ou Ctrl+Z)  desfaz o último comando/pedido · /panic (ou Esc) cancela tudo que está agendado
   /code  mostra o código Strudel   ·   /clear  limpa o log
 camadas: ${LAYER_IDS.join(', ')} · seções: ${SECTION_TYPES.join(', ')}`;
 
@@ -81,6 +83,8 @@ export function parseCommand(input: string, state: SongState): Command {
       return { kind: 'stop' };
     case 'panic':
       return { kind: 'panic' };
+    case 'undo':
+      return { kind: 'undo' };
     case 'code':
       return { kind: 'code' };
     case 'clear':
@@ -108,9 +112,8 @@ export function parseCommand(input: string, state: SongState): Command {
       const layer = layerArg(args[0], state);
       const c = ops([{ op: 'mute', layer }], { at: 'bar' }, `mute ${layer}`);
       if (args[1] && c.kind === 'ops') {
-        const bars = Math.round(number(args[1], 1, 128, 'compassos'));
-        c.revert = { ops: [{ op: 'unmute', layer }], afterBars: bars, label: `unmute ${layer}` };
-        c.label += ` por ${bars}c`;
+        c.revertAfterBars = Math.round(number(args[1], 1, 128, 'compassos'));
+        c.label += ` por ${c.revertAfterBars}c`;
       }
       return c;
     }
@@ -172,6 +175,14 @@ export function parseCommand(input: string, state: SongState): Command {
       try {
         const sections = parseArrangement(args.join(' '));
         return ops([{ op: 'set_arrangement', sections }], { at: 'section' }, `arranjo ${args.join(' ')}`);
+      } catch (e) {
+        throw new CommandError((e as Error).message);
+      }
+    }
+    case 'insert': {
+      try {
+        const sections = parseArrangement(args.join(' '));
+        return ops([{ op: 'insert_sections', sections }], { at: 'section' }, `inserir ${args.join(' ')}`);
       } catch (e) {
         throw new CommandError((e as Error).message);
       }

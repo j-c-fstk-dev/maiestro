@@ -37,10 +37,17 @@ export const OpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('remove_layer'), layer: LayerIdSchema }),
   /** substitui o arranjo; ele recomeça do início no ciclo em que a op for aplicada */
   z.object({ op: z.literal('set_arrangement'), sections: z.array(SectionSchema).min(1) }),
+  /** toca estas seções uma vez a partir do ciclo da op; depois o arranjo segue de onde estava
+   *  (o agendador agenda sozinho o `remove_sections` correspondente) */
+  z.object({ op: z.literal('insert_sections'), sections: z.array(SectionSchema).min(1).max(8) }),
+  /** remove as N primeiras seções e reancora o arranjo no ciclo da op (fim de um insert_sections) */
+  z.object({ op: z.literal('remove_sections'), count: z.number().int().min(1) }),
   /** pula para a próxima seção desse tipo (a partir do ciclo em que a op for aplicada) */
   z.object({ op: z.literal('jump_to'), section: SectionTypeSchema }),
-  /** troca a música inteira (ex.: carregar outro estilo) */
+  /** troca a música inteira (ex.: carregar outro estilo); o arranjo recomeça no ciclo da op */
   z.object({ op: z.literal('load'), state: SongStateSchema }),
+  /** volta a um estado anterior exatamente como era, inclusive a posição no arranjo (desfazer) */
+  z.object({ op: z.literal('restore'), state: SongStateSchema }),
 ]);
 export type Op = z.infer<typeof OpSchema>;
 
@@ -110,6 +117,18 @@ export function applyOp(state: SongState, op: Op, cycle: number): SongState {
       s.arrangement = op.sections;
       s.anchor = Math.round(cycle);
       break;
+    case 'insert_sections': {
+      const current = positionAt(state, cycle).index;
+      const rest = [...s.arrangement.slice(current), ...s.arrangement.slice(0, current)];
+      s.arrangement = [...op.sections, ...rest];
+      s.anchor = Math.round(cycle);
+      break;
+    }
+    case 'remove_sections':
+      if (op.count >= s.arrangement.length) throw new OpError('não dá para remover todas as seções');
+      s.arrangement = s.arrangement.slice(op.count);
+      s.anchor = Math.round(cycle);
+      break;
     case 'jump_to': {
       const idx = s.arrangement.findIndex((sec) => sec.type === op.section);
       if (idx < 0) throw new OpError(`o arranjo não tem seção ${op.section}`);
@@ -122,6 +141,53 @@ export function applyOp(state: SongState, op: Op, cycle: number): SongState {
     }
     case 'load':
       return { ...structuredClone(op.state), anchor: Math.round(cycle) };
+    case 'restore':
+      return structuredClone(op.state);
   }
   return s;
+}
+
+/**
+ * Ops que desfazem `ops` a partir do estado `before` (usado em "por N compassos").
+ * Só cobre o que tem volta direta; o resto é ignorado.
+ */
+export function inverseOps(before: SongState, ops: Op[]): Op[] {
+  const inv: Op[] = [];
+  for (const op of ops) {
+    const layer = 'layer' in op ? before.layers[op.layer] : undefined;
+    switch (op.op) {
+      case 'mute':
+      case 'unmute':
+        if (layer) inv.push({ op: layer.muted ? 'mute' : 'unmute', layer: op.layer });
+        break;
+      case 'set_gain':
+        if (layer) inv.push({ op: 'set_gain', layer: op.layer, gain: layer.gain });
+        break;
+      case 'set_pattern':
+        if (layer) inv.push({ op: 'set_pattern', layer: op.layer, pattern: layer.pattern });
+        break;
+      case 'set_instrument':
+        if (layer) inv.push({ op: 'set_instrument', layer: op.layer, instrument: layer.instrument });
+        break;
+      case 'set_key':
+        inv.push({ op: 'set_key', key: before.key });
+        break;
+      case 'set_bpm':
+        inv.push({ op: 'set_bpm', bpm: before.bpm, rampBars: op.rampBars });
+        break;
+      case 'set_mood':
+        inv.push({ op: 'set_mood', ...before.mood });
+        break;
+      case 'set_master':
+        inv.push({ op: 'set_master', ...before.master });
+        break;
+      case 'add_layer':
+        inv.push(layer ? { op: 'add_layer', layer: op.layer, value: layer } : { op: 'remove_layer', layer: op.layer });
+        break;
+      case 'remove_layer':
+        if (layer) inv.push({ op: 'add_layer', layer: op.layer, value: layer });
+        break;
+    }
+  }
+  return inv;
 }

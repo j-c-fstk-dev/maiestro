@@ -23,6 +23,8 @@ export interface Instrument {
   /** ganho base do instrumento */
   gain: number;
   params: Record<string, number>;
+  /** filtro de formante ("voz"): a, e, i, o, u */
+  vowel?: string;
 }
 
 const DRUM_LAYERS: LayerId[] = ['kick', 'clap', 'hats', 'perc'];
@@ -62,6 +64,14 @@ export const INSTRUMENTS: Instrument[] = [
     params: { fm: 3, fmh: 2.01, decay: 0.5, sustain: 0, room: 0.6, delay: 0.25 } },
   { id: 'square_lead', label: 'lead quadrado', kind: 'synth', layers: ['lead'], sound: 'square', octave: 4, gain: 0.18,
     params: { lpf: 2500, decay: 0.15, sustain: 0.3 } },
+
+  // voz (coro sintético: formante sobre osciladores; não há samples de voz ainda)
+  { id: 'choir_aah', label: 'coro etéreo "aah"', kind: 'synth', layers: ['vocal'], sound: 'sawtooth', octave: 4, gain: 0.2,
+    vowel: 'a', params: { attack: 0.6, release: 2.5, lpf: 3500, room: 0.9, delay: 0.3 } },
+  { id: 'choir_ooh', label: 'coro etéreo "ooh"', kind: 'synth', layers: ['vocal'], sound: 'supersaw', octave: 4, gain: 0.16,
+    vowel: 'o', params: { attack: 0.8, release: 3, lpf: 2500, room: 0.95 } },
+  { id: 'vox_chop', label: 'vocal picado', kind: 'synth', layers: ['vocal'], sound: 'square', octave: 5, gain: 0.14,
+    vowel: 'e', params: { decay: 0.12, sustain: 0, room: 0.6, delay: 0.45 } },
 
   // efeitos
   { id: 'noise_riser', label: 'riser de ruído', kind: 'synth', layers: ['fx'], sound: 'white', gain: 0.25,

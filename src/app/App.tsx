@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { engine, loadStyle, panic, play, run, stop, togglePlay, toggleMute, useUi, type LogLine } from './controller';
+import { engine, loadStyle, panic, play, run, stop, togglePlay, toggleMute, undo, useUi, type LogLine } from './controller';
 import { useNow } from './useNow';
 import { STYLES } from '../presets/styles';
 import { INSTRUMENTS_BY_ID } from '../presets/instruments';
@@ -18,7 +18,7 @@ const SECTION_LABEL: Record<string, string> = {
 };
 
 export function App() {
-  const { snap, showCode, loading } = useUi();
+  const { snap, showCode, loading, thinking } = useUi();
   const now = useNow();
   const { state, playing, pending } = snap;
 
@@ -28,6 +28,9 @@ export function App() {
       if (e.key === 'Escape') {
         e.preventDefault();
         panic();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !(typing && (e.target as HTMLInputElement).value)) {
+        e.preventDefault();
+        void undo();
       } else if (e.code === 'Space' && !typing) {
         e.preventDefault();
         togglePlay();
@@ -39,7 +42,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Header state={state} playing={playing} now={now} pendingCount={pending.length} loading={loading} />
+      <Header state={state} playing={playing} now={now} pendingCount={pending.length} loading={loading} thinking={thinking} />
       <div className="main">
         <div className="col">
           <Deck state={state} playing={playing} now={now} />
@@ -61,7 +64,7 @@ export function App() {
   );
 }
 
-function Header({ state, playing, now, pendingCount, loading }: { state: SongState; playing: boolean; now: number; pendingCount: number; loading: boolean }) {
+function Header({ state, playing, now, pendingCount, loading, thinking }: { state: SongState; playing: boolean; now: number; pendingCount: number; loading: boolean; thinking: string | null }) {
   const bar = Math.floor(now);
   const beat = Math.floor((now % 1) * 4) + 1;
   return (
@@ -83,6 +86,7 @@ function Header({ state, playing, now, pendingCount, loading }: { state: SongSta
         </span>
       )}
       {pendingCount > 0 && <span className="warn">{pendingCount} agendada(s)</span>}
+      {thinking && <span className="thinking">maestro pensando…</span>}
     </header>
   );
 }
@@ -179,13 +183,14 @@ function Pending({ pending, now }: { pending: Entry[]; now: number }) {
   return (
     <section className="panel">
       <h2>
-        agendado <span className="dim">· Esc cancela tudo</span>
+        agendado <span className="dim">· Esc cancela tudo · Ctrl+Z desfaz o último</span>
       </h2>
       <ul className="pending">
         {pending.map((e) => (
           <li key={e.id}>
             <span className="when">c{e.cycle}</span>
-            <span className="dim">em {Math.max(0, e.cycle - now).toFixed(1)} compassos</span> {e.label}
+            <span className="dim">em {Math.max(0, e.cycle - now).toFixed(1)} compassos</span>{' '}
+            <span className={`src src-${e.source}`}>{e.source === 'ai' ? 'IA' : e.source === 'autopilot' ? 'auto' : 'você'}</span> {e.label}
           </li>
         ))}
       </ul>
@@ -211,7 +216,7 @@ function Log() {
   );
 }
 
-const COMPLETIONS = ['/play', '/stop', '/style', '/bpm', '/key', '/mute', '/unmute', '/gain', '/pattern', '/inst', '/add', '/remove', '/fx', '/filter', '/reverb', '/volume', '/mood', '/arr', '/goto', '/list', '/panic', '/code', '/clear', '/help'];
+const COMPLETIONS = ['/play', '/stop', '/undo', '/insert', '/style', '/bpm', '/key', '/mute', '/unmute', '/gain', '/pattern', '/inst', '/add', '/remove', '/fx', '/filter', '/reverb', '/volume', '/mood', '/arr', '/goto', '/list', '/panic', '/code', '/clear', '/help'];
 
 function Prompt() {
   const [value, setValue] = useState('');
@@ -254,7 +259,7 @@ function Prompt() {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="/help · /play techno · /mute kick 8 · /key F minor @drop · /goto breakdown"
+        placeholder="fale com o maestro: “na próxima seção tira o beat e faz um build” · ou /help"
         spellCheck={false}
         autoComplete="off"
         aria-label="comando"

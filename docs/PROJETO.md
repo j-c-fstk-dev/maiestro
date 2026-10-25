@@ -369,13 +369,25 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - **Teste no navegador headless:** samples da 909/808 carregam, troca de estilo, tom, salto de seção e mute temporário caem no compasso certo; parar/tocar de novo e rampa de BPM funcionam.
 - **Bug encontrado e corrigido:** o Strudel só carrega os AudioWorklets (supersaw, DJ filter) num clique do mouse; com play pelo teclado eles faltavam. O engine agora carrega no `init`.
 
-### Fase 2 — IA maestro (o coração)
-- [ ] Conductor + system prompt v1 + schemas Zod + retry.
-- [ ] Scheduler com `next_bar / next_phrase / next_section / bar N`.
-- [ ] Pedidos compostos → vários plans encadeados.
-- [ ] Log mostrando o que foi agendado; desfazer; pânico.
-- [ ] Suite de "prompts de teste" (≈30 frases) para avaliar o maestro a cada mudança no prompt.
+### Fase 2 — IA maestro (o coração) ✅ (falta rodar a avaliação com a z.ai de verdade)
+- [x] Conductor + system prompt v1 + schemas Zod + retry.
+- [x] Scheduler com `bar / phrase / section / <tipo de seção> / N compassos depois`.
+- [x] Pedidos compostos → vários plans encadeados.
+- [x] Log mostrando o que foi agendado; desfazer (`Ctrl+Z`, `/undo`, "desfaz"); pânico.
+- [x] Suite de 32 prompts de teste (`npm run eval:ai`).
 - **Pronto quando:** a frase *"na próxima seção tira o beat, põe um vocal etéreo, faz build e drop e deixa mais sombrio"* funciona do jeito esperado.
+
+**Como ficou (2026-10-25):**
+- **Fluxo:** texto → `Conductor.ask` (`src/conductor/conductor.ts`) monta system prompt + contexto (estado, posição, arranjo, camadas, o que já está agendado) + memória dos últimos 4 pedidos → LLM devolve JSON `{reply, plans[], undo?}` → Zod (`schema.ts`) → ops → `Timeline.schedule`, todos no mesmo **grupo** (o desfazer desfaz o pedido inteiro).
+- **Retry com feedback:** JSON quebrado, formato errado ou op que não faz sentido (padrão que não existe, camada vazia…) → o grupo é cancelado e o erro volta para a IA; ela tem mais 1 tentativa. Se falhar de novo, nada muda.
+- **Formato da IA** é mais tolerante que as ops internas: números como texto, nota em minúscula, seções só com `{type, bars}` (o modelo de seção completa o resto).
+- **"Quando" da IA:** `"bar" | "phrase" | "section" | {"section": "drop"} | {"after": N}` (N compassos depois do plano anterior). `forBars: N` desfaz o plano sozinho (via `inverseOps`).
+- **Novas ops:** `insert_sections` (toca seções uma vez e o arranjo segue de onde estava — a Timeline agenda o `remove_sections` sozinha) e `restore` (desfazer).
+- **Timeline.resolve** procura "próxima seção X" no arranjo *como ele vai estar*, incluindo seções inseridas por mudanças já agendadas (o "drop" do pedido acha o drop inserido).
+- **Camada `vocal`:** coro sintético (formante `vowel` sobre osciladores): `choir_aah`, `choir_ooh`, `vox_chop`. Ainda não há samples de voz.
+- **System prompt v1** (`prompt.ts`) é gerado do catálogo (nunca fica desatualizado) e traz uma tabela de interpretação ("sombrio" → darkness/escala/reese, "abafa" → filtro…) e o exemplo do projeto.
+- **Avaliação:** `src/conductor/eval/cases.ts` tem 32 pedidos com critérios; `cases.test.ts` garante que uma resposta ideal passa em todos (testa os critérios); `npm run eval:ai` roda os 32 com o LLM de verdade e imprime um relatório (acertos, tentativas, latência, tokens).
+- **Teste no navegador** com um LLM falso local: retry após resposta inválida, os 4 planos agendados nos compassos certos, e tocando até o fim: c17 sem kick + coro, c25 build inserido, c33 drop em lá frígio com escuridão 0,85 e o kick de volta. `Ctrl+Z` cancela o pedido inteiro.
 
 ### Fase 3 — Gravação
 - [ ] Gravação WAV via AudioWorklet, export MP3.
@@ -444,6 +456,11 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 14 | 2026-10-25 | Arranjo roteado por ciclo absoluto (`maestroArrange`) em vez do `arrange` do Strudel | O `arrange` comprime o tempo das seções; o nosso mantém padrões `<...>` fluindo |
 | 15 | 2026-10-25 | Ops como vocabulário único de comandos e da IA | Um só caminho de validação/agendamento |
 | 16 | 2026-10-25 | Página de testes da Fase 0 removida (está no histórico do git) | A UI da Fase 1 cobre os mesmos testes |
+| 17 | 2026-10-25 | Formato de resposta da IA próprio (achatado e tolerante) convertido para ops | Modelos pequenos erram menos; ops internas continuam estritas |
+| 18 | 2026-10-25 | 1 retry com o erro devolvido à IA; depois desiste sem mexer na música | Corrige a maioria dos erros sem dobrar a latência sempre |
+| 19 | 2026-10-25 | Desfazer por grupo (comando ou pedido inteiro); se já tocou, `restore` do estado anterior | É o que o usuário entende por "desfaz" |
+| 20 | 2026-10-25 | Camada `vocal` com coro sintético (formante) até termos samples de voz | Atende "voz etérea" sem depender de samples externos |
+| 21 | 2026-10-25 | Avaliação da IA como suíte do Vitest separada (`vitest.eval.config.ts`) | Funciona em qualquer SO; não roda no `npm test` (gasta API) |
 
 ---
 

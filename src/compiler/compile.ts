@@ -15,9 +15,9 @@ import { loopLength, sectionStarts } from '../song/time';
  */
 
 /** cada grupo de camadas num "orbit" próprio do Strudel, para reverb/delay não brigarem */
-const ORBITS: Record<LayerId, number> = { kick: 1, clap: 1, hats: 1, perc: 1, bass: 2, chords: 3, lead: 4, fx: 5 };
+const ORBITS: Record<LayerId, number> = { kick: 1, clap: 1, hats: 1, perc: 1, bass: 2, chords: 3, lead: 4, vocal: 6, fx: 5 };
 const DRUMS: LayerId[] = ['kick', 'clap', 'hats', 'perc'];
-const MELODIC: LayerId[] = ['bass', 'chords', 'lead'];
+const MELODIC: LayerId[] = ['bass', 'chords', 'lead', 'vocal'];
 
 /** cutoff "aberto" usado quando o mood escurece um instrumento sem lpf próprio */
 const OPEN_LPF = 12000;
@@ -39,6 +39,7 @@ export function compileLayer(state: SongState, id: LayerId, layer: Layer, rise?:
   } else {
     parts.push(`.s("${inst.sound}")`);
     if (MELODIC.includes(id)) parts.push(`.scale("${state.key.root}${inst.octave ?? 3}:${state.key.scale}")`);
+    if (inst.vowel) parts.push(`.vowel("${inst.vowel}")`);
   }
 
   const params: Record<string, number> = { ...inst.params, ...stripUndefined(layer.fx) };

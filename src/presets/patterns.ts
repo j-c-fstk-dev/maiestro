@@ -63,6 +63,11 @@ export const PATTERNS: PatternDef[] = [
   { id: 'acid_riff', layer: 'lead', label: 'riff acid', src: `n("0 0 7 0 [0 3] 0 6 [0 7]".add("${PROG}"))` },
   { id: 'sequence', layer: 'lead', label: 'sequência 16', src: `n("0 7 4 2 0 4 7 9 0 7 4 2 9 7 4 2".add("${PROG}"))` },
 
+  // voz
+  { id: 'vox_long', layer: 'vocal', label: 'notas longas', src: `n("<[0,4] [-2,2] [-4,0] [-1,3]>")` },
+  { id: 'vox_rise', layer: 'vocal', label: 'frase subindo', src: `n("<[0 ~ 2 ~ 4 ~ ~ ~] [4 ~ 2 ~ 7 ~ ~ ~]>".add("${PROG}")).slow(2)` },
+  { id: 'vox_chops', layer: 'vocal', label: 'picotado', src: `n("[~ 4] [~ 7] [~ 4 ~ 2] ~".add("${PROG}"))` },
+
   // fx
   { id: 'riser', layer: 'fx', label: 'riser', src: 's("white*16")' },
   { id: 'noise_hits', layer: 'fx', label: 'ruído no 1', src: 's("white ~ ~ ~").decay(0.4)' },

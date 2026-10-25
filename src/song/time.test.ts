@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { positionAt, resolveWhen } from './time';
+import { positionAt } from './time';
 import { section } from '../presets/sections';
 import { applyOp } from './ops';
 import { STYLES } from '../presets/styles';
@@ -14,15 +14,6 @@ describe('time', () => {
     expect(positionAt(arr, 24).section.type).toBe('drop');
     expect(positionAt(arr, 40).section.type).toBe('intro'); // loop de 40
     expect(positionAt(arr, 45.5).barInSection).toBe(5.5);
-  });
-
-  it('resolve "quando" em ciclos', () => {
-    expect(resolveWhen(arr, { at: 'bar' }, 3.2)).toBe(4);
-    expect(resolveWhen(arr, { at: 'phrase' }, 3.2)).toBe(8);
-    expect(resolveWhen(arr, { at: 'section' }, 3.2)).toBe(16);
-    expect(resolveWhen(arr, { at: 'section' }, 16)).toBe(16);
-    expect(resolveWhen(arr, { at: 'section_type', type: 'drop' }, 3.2)).toBe(24);
-    expect(resolveWhen(arr, { at: 'section_type', type: 'intro' }, 3.2)).toBe(40);
   });
 
   it('jump_to reposiciona o arranjo sem mexer no relógio', () => {

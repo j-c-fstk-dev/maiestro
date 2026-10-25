@@ -111,3 +111,8 @@ button { font: inherit; color: inherit; }
 .prompt input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--fg); font: inherit; font-size: 15px; }
 .prompt input::placeholder { color: #3d5a45; }
 .ghost { background: transparent; border: 1px solid var(--line); color: var(--accent); padding: 4px 10px; cursor: pointer; }
+
+.thinking { color: var(--ai); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.src { font-size: 11px; padding: 0 4px; border: 1px solid var(--line); color: var(--dim); }
+.src-ai { color: var(--ai); border-color: #24435a; }

@@ -51,34 +51,3 @@ export type When =
   | { at: 'section' }
   | { at: 'section_type'; type: SectionType }
   | { at: 'cycle'; cycle: number };
-
-/**
- * Converte um "quando" musical no ciclo absoluto do próximo limite.
- * `minCycle` é o primeiro ciclo em que ainda dá tempo de agendar.
- */
-export function resolveWhen(state: Pick<SongState, 'arrangement' | 'anchor'>, when: When, minCycle: number): number {
-  switch (when.at) {
-    case 'cycle':
-      return Math.max(when.cycle, Math.ceil(minCycle));
-    case 'bar':
-      return Math.ceil(minCycle);
-    case 'phrase':
-      return Math.ceil(minCycle / PHRASE_BARS) * PHRASE_BARS;
-    case 'section': {
-      const p = positionAt(state, minCycle);
-      return p.barInSection === 0 ? p.startCycle : p.startCycle + p.section.bars;
-    }
-    case 'section_type': {
-      // procura a próxima vez que uma seção desse tipo começa (no máximo 2 voltas do arranjo)
-      const len = loopLength(state.arrangement);
-      let c = Math.ceil(minCycle);
-      const limit = c + 2 * len;
-      while (c < limit) {
-        const p = positionAt(state, c);
-        if (p.barInSection === 0 && p.section.type === when.type) return c;
-        c = p.startCycle + p.section.bars;
-      }
-      return resolveWhen(state, { at: 'section' }, minCycle);
-    }
-  }
-}

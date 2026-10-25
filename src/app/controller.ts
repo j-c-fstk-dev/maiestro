@@ -5,6 +5,8 @@ import { STYLES, STYLES_BY_ID } from '../presets/styles';
 import { CommandError, HELP, parseCommand } from '../commands/parse';
 import { OpError } from '../song/ops';
 import type { LayerId } from '../song/types';
+import { Conductor, ConductorError } from '../conductor/conductor';
+import { chat } from '../conductor/llmClient';
 
 /** Liga motor + linha do tempo + estado da UI. Uma instância por página. */
 
@@ -21,6 +23,8 @@ interface UiState {
   log: LogLine[];
   showCode: boolean;
   loading: boolean;
+  /** pedido que o maestro está processando */
+  thinking: string | null;
 }
 
 let logId = 0;
@@ -39,7 +43,10 @@ export const useUi = create<UiState>(() => ({
   log: [],
   showCode: false,
   loading: false,
+  thinking: null,
 }));
+
+export const conductor = new Conductor(timeline, chat);
 
 timeline.subscribe((snap) => useUi.setState({ snap }));
 setInterval(() => timeline.tick(), 50);
@@ -105,8 +112,9 @@ export async function run(input: string) {
     const cmd = parseCommand(text, timeline.stateAt(Infinity));
     switch (cmd.kind) {
       case 'natural':
-        log('a IA maestro chega na Fase 2 — por enquanto use /comandos (digite /help)', 'ai');
-        return;
+        return ask(cmd.text);
+      case 'undo':
+        return undo();
       case 'info':
         log(cmd.text);
         return;
@@ -123,17 +131,13 @@ export async function run(input: string) {
         useUi.setState({ log: [] });
         return;
       case 'ops': {
-        const cycle = await timeline.schedule(cmd.ops, cmd.when, cmd.label);
+        const cycle = await timeline.schedule(cmd.ops, cmd.when, cmd.label, { revertAfterBars: cmd.revertAfterBars });
         if (cycle === null) {
           log(`ok: ${cmd.label}`, 'ok');
           return;
         }
         log(`agendado p/ compasso ${cycle} (${describeWait(cycle)}): ${cmd.label}`, 'ok');
-        if (cmd.revert) {
-          const back = cycle + cmd.revert.afterBars;
-          await timeline.schedule(cmd.revert.ops, { at: 'cycle', cycle: back }, cmd.revert.label);
-          log(`agendado p/ compasso ${back}: ${cmd.revert.label}`, 'ok');
-        }
+        if (cmd.revertAfterBars) log(`volta no compasso ${cycle + cmd.revertAfterBars}`, 'ok');
         return;
       }
     }
@@ -146,11 +150,41 @@ export async function run(input: string) {
   }
 }
 
+export async function undo() {
+  const msg = await timeline.undo();
+  log(msg ?? 'nada para desfazer', msg ? 'warn' : 'info');
+}
+
+/** Pedido em linguagem natural → maestro. Um de cada vez; a música não espera por ele. */
+async function ask(text: string) {
+  if (useUi.getState().thinking) {
+    log('o maestro ainda está pensando no pedido anterior — espere um instante (ou use /comandos)', 'warn');
+    return;
+  }
+  useUi.setState({ thinking: text });
+  try {
+    const r = await conductor.ask(text);
+    if (r.undone) log(r.undone, 'warn');
+    log(`maestro: ${r.reply || '(sem comentário)'}`, 'ai');
+    for (const s of r.scheduled) {
+      log(s.cycle === null ? `  · ${s.label}` : `  · compasso ${s.cycle} (${describeWait(s.cycle)}): ${s.label}`, 'ai');
+    }
+    const retry = r.attempts > 1 ? ` · ${r.attempts} tentativas` : '';
+    log(`  ${r.model} · ${(r.latencyMs / 1000).toFixed(1)}s · ${r.tokens} tokens${retry}`, 'info');
+  } catch (err) {
+    if (err instanceof ConductorError) log(`o maestro não conseguiu montar um plano válido (${err.message}). Nada mudou.`, 'err');
+    else log(`falha ao falar com a IA (a música não é afetada): ${(err as Error).message}`, 'err');
+  } finally {
+    useUi.setState({ thinking: null });
+  }
+}
+
 function describeWait(cycle: number) {
   const bars = cycle - engine.now();
   const secs = bars * engine.secondsPerCycle();
   return `em ${secs.toFixed(1)}s`;
 }
 
-log('MAESTRO · fase 1. Escolha um estilo e dê play, ou digite /help. Espaço = play/stop · Esc = pânico');
+log('MAESTRO · escolha um estilo e dê play. Fale com o maestro em português ou use /comandos (/help).');
+log('atalhos: Espaço = play/stop · Esc = cancela o agendado · Ctrl+Z = desfaz');
 export { HELP };

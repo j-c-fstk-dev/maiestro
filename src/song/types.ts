@@ -6,7 +6,7 @@ import { z } from 'zod';
  */
 
 /** Slots fixos de camada. Uma camada pode estar ausente do deck. */
-export const LAYER_IDS = ['kick', 'clap', 'hats', 'perc', 'bass', 'chords', 'lead', 'fx'] as const;
+export const LAYER_IDS = ['kick', 'clap', 'hats', 'perc', 'bass', 'chords', 'lead', 'vocal', 'fx'] as const;
 export const LayerIdSchema = z.enum(LAYER_IDS);
 export type LayerId = z.infer<typeof LayerIdSchema>;
 
@@ -37,9 +37,9 @@ export type LayerFx = z.infer<typeof LayerFxSchema>;
 export const LayerSchema = z.object({
   instrument: z.string(),
   pattern: z.string(),
-  gain: z.number().min(0).max(1.5),
-  muted: z.boolean(),
-  fx: LayerFxSchema,
+  gain: z.number().min(0).max(1.5).default(1),
+  muted: z.boolean().default(false),
+  fx: LayerFxSchema.default({}),
 });
 export type Layer = z.infer<typeof LayerSchema>;
 

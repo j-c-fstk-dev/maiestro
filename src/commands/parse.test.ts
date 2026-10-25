@@ -22,7 +22,7 @@ describe('parseCommand', () => {
   });
 
   it('mute temporário gera o unmute', () => {
-    expect(p('/mute kick 8')).toMatchObject({ ops: [{ op: 'mute', layer: 'kick' }], revert: { ops: [{ op: 'unmute', layer: 'kick' }], afterBars: 8 } });
+    expect(p('/mute kick 8')).toMatchObject({ ops: [{ op: 'mute', layer: 'kick' }], revertAfterBars: 8 });
   });
 
   it('arranjo', () => {
