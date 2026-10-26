@@ -54,6 +54,21 @@ npm start                # versão otimizada (recomendado para tocar) — abre e
 **Atalhos:** `Espaço` play/stop (fora do prompt) · `Esc` cancela tudo que está agendado · `Ctrl+Z` desfaz · `↑/↓` histórico · `Tab` completa comando (ou troca o deck editado).
 Clique numa camada para mutar/desmutar.
 
+## Tocar em outro aparelho (celular, outro PC) na mesma rede Wi-Fi
+
+```bash
+npm run rede
+```
+
+O terminal mostra um endereço `https://…` em **Network** (ex.: `https://192.168.0.10:5173`). Abra no outro aparelho:
+
+1. O navegador vai avisar que o certificado não é confiável — é normal (é um certificado feito na hora pelo próprio app). Clique em **Avançado → Continuar** (Chrome) ou **Mostrar detalhes → visitar** (Safari).
+2. O som é gerado **no aparelho que abriu a página** (é o processador dele que conta). A IA continua passando pelo seu computador, então ele precisa ficar com o `npm run rede` rodando.
+
+Por que HTTPS: fora do `localhost`, o navegador só libera os módulos de áudio (supersaw, filtro, gravação) em páginas seguras. Por `http://` o app abre, mas o som não funciona direito.
+
+Se não abrir: confira se os dois aparelhos estão no mesmo Wi-Fi e se nenhum firewall do computador bloqueia a porta 5173 (no Linux com ufw: `sudo ufw allow 5173`). No iPhone, desligue o modo silencioso (chave lateral) para ouvir o som do navegador.
+
 ## Seus samples (vocais etc.)
 
 Coloque arquivos em `public/samples/` com um `strudel.json` — veja [`public/samples/LEIA-ME.md`](public/samples/LEIA-ME.md).
@@ -63,6 +78,7 @@ Coloque arquivos em `public/samples/` com um `strudel.json` — veja [`public/sa
 | comando | o que faz |
 |---|---|
 | `npm start` | versão otimizada + proxy da IA (recomendado para tocar) |
+| `npm run rede` | igual, mas acessível por outros aparelhos da rede, com HTTPS |
 | `npm run dev` | servidor de desenvolvimento + proxy da IA (`/api/llm`) |
 | `npm test` | testes (Vitest) — o compiler é testado rodando o Strudel de verdade; a IA é testada com respostas roteirizadas |
 | `npm run eval:ai` | avalia o maestro com a IA de verdade (35 pedidos, usa a chave do `.env`) e imprime um relatório |

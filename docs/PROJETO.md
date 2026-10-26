@@ -563,6 +563,7 @@ Nenhum segundo mudo nas gravações depois da correção. O que sobra em CPUs mu
 | 39 | 2026-10-26 | Engine recebe a música em partes (`MixParts`) e mantém cache de expressões | Reinterpretar a música inteira a cada mudança travava a página e o scheduler pulava notas |
 | 40 | 2026-10-26 | UI: só os componentes de relógio se atualizam com o tempo | Re-render da tela inteira competia com o scheduler de áudio |
 | 41 | 2026-10-26 | `npm start` (produção) recomendado para tocar; `/leve on` para máquinas modestas | React de desenvolvimento é bem mais pesado |
+| 42 | 2026-10-26 | `npm run rede`: preview com `--host` + HTTPS autoassinado (`@vitejs/plugin-basic-ssl`) e qualquer nome de host | Fora do localhost, AudioWorklets só existem em contexto seguro; `npm start --host` não repassava a flag |
 
 ---
 
