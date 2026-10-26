@@ -30,6 +30,7 @@ export type Command =
   | { kind: 'rec' }
   | { kind: 'target'; deck: DeckId }
   | { kind: 'auto'; autonomy?: number; ai?: boolean }
+  | { kind: 'scene'; action: 'save' | 'recall' | 'list' | 'forget'; name?: string; deck: DeckId }
   | { kind: 'code' }
   | { kind: 'clear' }
   | { kind: 'info'; text: string }
@@ -40,7 +41,7 @@ export class CommandError extends Error {}
 const FX_PARAMS = ['lpf', 'hpf', 'room', 'delay', 'pan', 'distort'] as const;
 
 export const HELP = `comandos (sufixo opcional @bar @phrase @section @<seção>, ex.: /key F minor @drop)
-  /play [estilo]            tocar (techno, house, trance, ambient)
+  /play [estilo]            tocar (${Object.keys(STYLES_BY_ID).join(', ')})
   /stop                     parar
   /style <estilo>           trocar o estilo do deck selecionado (padrão @section)
   /bpm <n> [rampa]          ex.: /bpm 132 8  (rampa em compassos)
@@ -59,6 +60,10 @@ export const HELP = `comandos (sufixo opcional @bar @phrase @section @<seção>,
   /list styles | layers | transitions | patterns <camada> | insts <camada>
 dois decks: os comandos valem para o deck selecionado (Tab ou /deck a|b troca)
   /deck a|b                 selecionar o deck que os comandos editam
+cenas e código:
+  /save <nome> [a|b]        guardar o deck como cena (fica no navegador)
+  /recall <nome> [a|b]      carregar uma cena no deck (padrão: o que não está no ar) · /scenes · /forget <nome>
+  /raw <camada> <código>    camada com código Strudel livre, ex.: /raw perc s("[~ cp]*2").bank("RolandTR808")
 piloto automático:
   /auto <0-100>             autonomia (0 = desligado): até 30 detalhes · até 70 + camadas/estrutura · acima + tom, BPM e troca de música
   /auto off · /auto ia on|off (usar ou não a IA; sem ela, variações locais)
@@ -122,6 +127,21 @@ export function parseCommand(input: string, mix: MixState, target: DeckId = mix.
     }
     case 'deck':
       return { kind: 'target', deck: deckArg(args[0]) };
+    case 'raw': {
+      const layer = layerId(args[0]);
+      const code = args.slice(1).join(' ').trim();
+      if (!code) throw new CommandError('use /raw <camada> <código strudel>, ex.: /raw perc s("[~ cp]*2").bank("RolandTR808").room(0.4)');
+      return ops([{ op: 'set_raw', layer, code }], { at: 'bar' }, `${layer} = código`);
+    }
+    case 'save':
+    case 'recall':
+    case 'forget': {
+      if (!args[0]) throw new CommandError(`use /${cmd} <nome>${cmd === 'forget' ? '' : ' [a|b]'}`);
+      const action = cmd as 'save' | 'recall' | 'forget';
+      return { kind: 'scene', action, name: args[0], deck: args[1] ? deckArg(args[1]) : action === 'recall' ? other(mix.live) : target };
+    }
+    case 'scenes':
+      return { kind: 'scene', action: 'list', deck: target };
     case 'auto': {
       const a = (args[0] ?? '').toLowerCase();
       if (a === 'off') return { kind: 'auto', autonomy: 0 };

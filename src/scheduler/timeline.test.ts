@@ -57,12 +57,15 @@ describe('Timeline', () => {
     expect(engine.scheduled).toEqual([]);
   });
 
-  it('se o motor recusar o código, a mudança é descartada', async () => {
-    const { engine, tl, errors } = await setup();
-    engine.failCode = () => true;
-    await tl.schedule([{ op: 'mute', layer: 'kick' }], { at: 'bar' }, 'mute');
-    expect(tl.snapshot().pending).toEqual([]);
-    expect(errors.length).toBe(1);
+  it('se o motor recusar o código, só a mudança nova sai e quem pediu fica sabendo', async () => {
+    const { engine, tl } = await setup();
+    await tl.schedule([{ op: 'mute', layer: 'bass' }], { at: 'bar' }, 'boa');
+    engine.failCode = (code) => code.includes('quebrado()');
+    await expect(tl.schedule([{ op: 'set_raw', layer: 'perc', code: 's("cp").quebrado()' }], { at: 'bar' }, 'ruim')).rejects.toThrow(/código quebrado/);
+    // a mudança boa do mesmo compasso continua agendada e no motor
+    expect(tl.snapshot().pending.map((e) => e.label)).toEqual(['boa']);
+    expect(engine.scheduled.map((s) => s.cycle)).toEqual([1]);
+    expect(engine.scheduled[0].code).not.toContain('quebrado');
   });
 
   it('pânico cancela tudo', async () => {

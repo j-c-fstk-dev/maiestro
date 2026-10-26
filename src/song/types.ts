@@ -40,6 +40,8 @@ export const LayerSchema = z.object({
   gain: z.number().min(0).max(1.5).default(1),
   muted: z.boolean().default(false),
   fx: LayerFxSchema.default({}),
+  /** camada "raw": código Strudel livre no lugar de instrumento + padrão */
+  code: z.string().max(2000).optional(),
 });
 export type Layer = z.infer<typeof LayerSchema>;
 

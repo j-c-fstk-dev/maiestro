@@ -56,6 +56,7 @@ export const AiOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('set_master'), filter: num(0, 1).optional(), reverb: num(0, 1).optional(), gain: num(0, 1.5).optional(), ...deck }),
   z.object({ op: z.literal('add_layer'), layer: LayerIdSchema, instrument: z.string(), pattern: z.string(), gain: num(0, 1.5).optional(), ...deck }),
   z.object({ op: z.literal('remove_layer'), layer: LayerIdSchema, ...deck }),
+  z.object({ op: z.literal('set_raw'), layer: LayerIdSchema, code: z.string().min(1).max(2000), gain: num(0, 1.5).optional(), ...deck }),
   z.object({ op: z.literal('insert_sections'), sections: z.array(AiSectionSchema).min(1).max(8), ...deck }),
   z.object({ op: z.literal('set_arrangement'), sections: z.array(AiSectionSchema).min(1).max(16), ...deck }),
   z.object({ op: z.literal('jump_to'), section: SectionTypeSchema, ...deck }),

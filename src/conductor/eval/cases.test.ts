@@ -51,6 +51,7 @@ const IDEAL: Record<string, unknown> = {
   'instrumento que não existe': { plans: [p('bar', [{ op: 'set_fx', layer: 'lead', distort: 2 }])] },
   'pedido vago': { plans: [p('phrase', [{ op: 'set_pattern', layer: 'hats', pattern: 'shuffle' }])] },
   'relativo a agora': { plans: [p({ after: 8 }, [{ op: 'mute', layer: 'hats' }])] },
+  'código livre': { plans: [p('bar', [{ op: 'set_raw', layer: 'perc', code: 's("hh*16").bank("RolandTR808").degradeBy(0.3).gain(0.5)' }])] },
   'preparar outro deck': { plans: [p('bar', [{ op: 'load_style', style: 'melodic', deck: 'b' }])] },
   'transição com estilo': { plans: [p('phrase', [{ op: 'transition', style: 'bass_swap', bars: 32 }])] },
   'preparar e mixar': {

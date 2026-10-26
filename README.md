@@ -3,7 +3,7 @@
 Web app de música eletrônica ao vivo com uma **IA maestro**: você monta a base (estilo, BPM, tom, estrutura),
 dá play e vai mudando a música com comandos. As mudanças entram no tempo certo, sem travar.
 
-> Status: **Fase 5 — piloto automático**: fale com a música em português, mixe entre dois decks, deixe o maestro conduzir sozinho e grave em MP3.
+> Status: **Fase 6 — polimento**: 9 estilos, instrumentos reais (CC0), limitador na saída, cenas salvas, camadas de código livre, IA, dois decks, piloto automático e gravação em MP3.
 > Visão, arquitetura e roadmap: [`docs/PROJETO.md`](docs/PROJETO.md).
 
 ## Rodar localmente
@@ -18,7 +18,7 @@ npm run dev              # abre em http://localhost:5173
 
 ## Como usar
 
-1. Escolha um estilo (**techno, house, trance, ambient**) e clique em **▶ tocar** — ou digite `/play techno`.
+1. Escolha um estilo (**techno, house, trance, melodic techno, drum & bass, hard techno, lo-fi, progressive house, ambient**) e clique em **▶ tocar** — ou digite `/play techno`.
 2. A música toca em loop seguindo o arranjo (intro → groove → build → drop → breakdown → …).
 3. **Fale com o maestro** no prompt, em português, por exemplo:
    - *na próxima seção tira a batida por alguns instantes, coloca uma voz etérea, faz um build e um drop e deixa mais sombrio*
@@ -41,12 +41,19 @@ npm run dev              # abre em http://localhost:5173
 | desfazer | `/undo` (ou `Ctrl+Z`) · `/panic` (ou `Esc`) cancela tudo que está agendado |
 | gravar | `/rec` começa/para |
 | piloto | `/auto 60` · `/auto off` · `/auto ia off` (só variações locais) |
+| cenas | `/save noite` · `/recall noite` · `/scenes` · `/forget noite` |
+| código livre | `/raw perc s("[~ cp]*2").bank("RolandTR808").room(0.4)` |
+| ajuda | botão `?` no topo, ou `?` / `F1` |
 | decks | `/deck b` (editar o B) · `/load house` (carrega no deck fora do ar) · `/copy a b` · `/xfade 32 bass_swap` · `/xfade cut @drop` · `/list transitions` |
 | info | `/list patterns bass` · `/list insts lead` · `/code` · `/help` |
 
 **Quando:** qualquer comando aceita um sufixo `@bar`, `@phrase` (8 compassos), `@section` ou `@<seção>` (ex.: `@drop`).
 **Atalhos:** `Espaço` play/stop (fora do prompt) · `Esc` cancela tudo que está agendado · `Ctrl+Z` desfaz · `↑/↓` histórico · `Tab` completa comando (ou troca o deck editado).
 Clique numa camada para mutar/desmutar.
+
+## Seus samples (vocais etc.)
+
+Coloque arquivos em `public/samples/` com um `strudel.json` — veja [`public/samples/LEIA-ME.md`](public/samples/LEIA-ME.md).
 
 ## Scripts
 

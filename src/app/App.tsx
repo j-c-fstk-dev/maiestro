@@ -17,8 +17,10 @@ import {
   tierLabel,
   toggleMute,
   togglePlay,
+  toggleHelp,
   toggleRecording,
   toggleTarget,
+  HELP,
   undo,
   useUi,
   type LogLine,
@@ -53,7 +55,11 @@ export function App() {
       const typing = (e.target as HTMLElement)?.tagName === 'INPUT';
       if (e.key === 'Escape') {
         e.preventDefault();
-        panic();
+        if (useUi.getState().showHelp) toggleHelp(false);
+        else panic();
+      } else if (e.key === 'F1' || (e.key === '?' && !typing)) {
+        e.preventDefault();
+        toggleHelp();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !(typing && (e.target as HTMLInputElement).value)) {
         e.preventDefault();
         void undo();
@@ -90,7 +96,31 @@ export function App() {
         </div>
       </div>
       <Prompt />
+      <HelpPanel />
     </div>
+  );
+}
+
+function HelpPanel() {
+  const show = useUi((s) => s.showHelp);
+  if (!show) return null;
+  return (
+    <aside className="help" role="dialog" aria-label="comandos">
+      <div className="help-head">
+        <h2>comandos e dicas</h2>
+        <button className="ghost" onClick={() => toggleHelp(false)}>
+          fechar (Esc)
+        </button>
+      </div>
+      <p className="dim">
+        Fale com o maestro em português no prompt (sem “/”), ou use os comandos. Exemplos: “na próxima seção tira o beat e faz um build”, “prepara um
+        lo-fi no outro deck e mixa”, “mais sombrio no drop”.
+      </p>
+      <pre>{HELP}</pre>
+      <p className="dim">
+        atalhos: Espaço play/stop · Esc cancela o agendado · Ctrl+Z desfaz · Tab troca o deck editado · ↑/↓ histórico · ? ou F1 esta ajuda
+      </p>
+    </aside>
   );
 }
 
@@ -118,6 +148,9 @@ function Header({ state, playing, now, pendingCount, loading, thinking }: { stat
       {pendingCount > 0 && <span className="warn">{pendingCount} agendada(s)</span>}
       {thinking && <span className="thinking">maestro pensando…</span>}
       <RecButton />
+      <button className="ghost help-btn" onClick={() => toggleHelp()} title="comandos e atalhos (? ou F1)">
+        ?
+      </button>
     </header>
   );
 }
@@ -271,8 +304,10 @@ function Deck({ id, mix, playing, now, target }: { id: DeckId; mix: MixState; pl
             >
               <span className="led">{layer.muted ? '□' : sectionMuted ? '◌' : '■'}</span>
               <span className="lid">{lid}</span>
-              <span className="inst">{INSTRUMENTS_BY_ID[layer.instrument]?.label ?? layer.instrument}</span>
-              <span className="pat">{PATTERNS_BY_ID[layer.pattern]?.label ?? layer.pattern}</span>
+              <span className="inst">{layer.code ? 'código' : (INSTRUMENTS_BY_ID[layer.instrument]?.label ?? layer.instrument)}</span>
+              <span className="pat" title={layer.code}>
+                {layer.code ?? PATTERNS_BY_ID[layer.pattern]?.label ?? layer.pattern}
+              </span>
               <span className="gain">{'▮'.repeat(Math.round(layer.gain * 5)).padEnd(7, '▯')}</span>
               <span className="st dim">{status}</span>
             </button>

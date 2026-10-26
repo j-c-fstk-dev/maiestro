@@ -8,6 +8,7 @@ export class FakeEngine implements EngineLike {
   scheduled: { cycle: number; code: string }[] = [];
   played: string[] = [];
   failCode: ((code: string) => boolean) | null = null;
+  lastError: string | null = null;
   now() {
     return this.cycle;
   }
@@ -20,7 +21,10 @@ export class FakeEngine implements EngineLike {
     return true;
   }
   async schedule(code: string, cycle: number) {
-    if (this.failCode?.(code)) return false;
+    if (this.failCode?.(code)) {
+      this.lastError = 'código quebrado';
+      return false;
+    }
     this.scheduled = [...this.scheduled.filter((s) => s.cycle !== cycle), { cycle, code }];
     return true;
   }

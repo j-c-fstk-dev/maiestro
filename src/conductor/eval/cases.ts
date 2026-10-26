@@ -101,6 +101,8 @@ export const CASES: EvalCase[] = [
     const entry = tl.snapshot().pending.find((e) => e.ops.some((o) => o.op === 'mute' && o.layer === 'hats'));
     return all(need(m, 'chimbal não mutou'), need(entry && entry.cycle >= 52 && entry.cycle <= 54, `entrou no compasso ${entry?.cycle} (esperado ~53)`));
   } },
+  { name: 'código livre', prompt: 'coloca um padrão de shaker bem rápido e solto na percussão', check: (r) =>
+    need(find(r, (o) => (o.op === 'set_raw' && o.layer === 'perc') || (o.op === 'set_pattern' && o.layer === 'perc')), 'percussão não mudou') },
   // dois decks
   { name: 'preparar outro deck', prompt: 'prepara um melodic techno no outro deck', check: (r) => {
     const load = find(r, (o) => o.op === 'load_style' && o.style === 'melodic');

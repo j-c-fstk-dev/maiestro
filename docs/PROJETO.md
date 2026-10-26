@@ -434,10 +434,25 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - **Teste no navegador** (4 min a 200 BPM, sem chave): 3 falhas da IA → piloto desligou a IA sozinho e seguiu com 8 variações locais + 1 troca de música (techno → ambient com filter_swap), sem erros.
 - **Prova dos 30 minutos** (`autopilot.test.ts`): 960 compassos simulados a 100% sem IA, semente fixa — sem nenhum erro, ≥5 trocas de música, ≥40 variações, ≥3 estilos diferentes, e **todo código gerado avaliado pelo Strudel de verdade**.
 
-### Fase 6 — Polimento e som
-- [ ] Biblioteca de samples própria (vocais, texturas), mais estilos, cenas salvas, painel de código.
-- [ ] Explorar op `raw_layer` (IA escreve Strudel livre em sandbox).
-- [ ] Explorar **Lyria RealTime** / Magenta RealTime como camada de textura/voz gerada por IA.
+### Fase 6 — Polimento e som ✅ (primeira rodada, sem validação de ouvido)
+- [x] Biblioteca de samples (instrumentos reais CC0 + pasta para samples do usuário), mais estilos, cenas salvas, painel de código.
+- [x] Op `raw_layer` (`set_raw`): IA/usuário escrevem Strudel livre, validado antes de tocar.
+- [ ] Lyria RealTime / Magenta RealTime como camada de textura/voz — pesquisado, não implementado (ver abaixo).
+
+**Como ficou (2026-10-26):**
+- **Volume / estouro:** a gravação de 5 min da Fase 3 tinha **0,37% das amostras no teto** (~100 mil pontos de distorção, nos drops). Agora há um **limitador na saída master** (DynamicsCompressor −4 dB, 20:1, ataque 2 ms) + ~1 dB de folga, e 20% de folga geral no ganho das camadas. Medido no drop do hard techno (o estilo mais pesado): **pico 0,90, zero amostras estouradas**. A gravação capta depois do limitador (o que se ouve).
+- **Instrumentos reais (VCSL, CC0 — livres até para uso comercial):** piano Steinway, marimba, vibrafone, kalimba, harpa, glockenspiel, órgão de tubos e taças de cristal (camada vocal/textura). Primeiras notas de um sample grande podem atrasar enquanto ele baixa (as taças têm 6,4 MB).
+- **Samples do usuário:** `public/samples/strudel.json` é carregado sozinho se existir (ver `public/samples/LEIA-ME.md`) — é o caminho para **vocais reais**, que não existem em nenhum banco livre disponível. Usados via camada de código: `/raw vocal s("vocal:0").slow(4).room(0.8)`.
+- **4 estilos novos:** drum & bass (174), hard techno (150, kick distorcido), lo-fi (82, piano com sétimas, kalimba, taças) e progressive house (122, vibrafone, marimba, coro). Agora são 9.
+- **Camadas de código (`set_raw`, `/raw <camada> <código>`):** qualquer camada pode tocar uma expressão Strudel livre; o app só aplica ganho e orbit. **Segurança:** palavras proibidas (`setcpm`, `samples`, `fetch`, `window`…, `src/engine/safety.ts`); **todo** pattern novo é consultado por 4 compassos antes de entrar (um pattern que quebra na consulta derrubaria o som); se o motor recusar, **só a mudança culpada sai** e quem pediu recebe o erro — a IA recebe a mensagem e corrige na tentativa seguinte. O piloto automático não usa código livre. Prompt da IA **v3** explica quando e como usar.
+- **Cenas:** `/save <nome> [a|b]`, `/recall <nome> [a|b]`, `/scenes`, `/forget <nome>` (guardadas no navegador, validadas ao carregar).
+- **Ajuda:** botão `?` no topo (ou `?`/F1) abre a colinha com todos os comandos e atalhos.
+- **Bug corrigido:** um código recusado num compasso descartava também as outras mudanças boas daquele compasso e o log ainda dizia "agendado".
+
+**Lyria RealTime / Magenta RealTime (pesquisa, não implementado):**
+- *Lyria RealTime* (Google, API Gemini, WebSocket, modelo `lyria-realtime-exp`): gera áudio contínuo a partir de prompts com peso + BPM/densidade/brilho. Seria uma "camada de textura" — um terceiro canal de áudio mixado com o Strudel. Exige chave do Google (outra conta), o áudio é gerado no servidor deles (latência de alguns segundos para mudar), e os termos de uso do áudio precisam ser checados antes de publicar.
+- *Magenta RealTime* (open weights): roda localmente mas precisa de GPU/TPU; não roda no navegador.
+- **Caminho sugerido:** depois da validação de ouvido, um protótipo "deck de textura" com Lyria (servidor: proxy WebSocket como o do LLM; cliente: AudioWorklet que toca o PCM recebido, sincronizado ao BPM do deck no ar). Fica para uma Fase 6b, se fizer sentido.
 
 ### Fase 7 — Rumo a produto (se fizer sentido)
 - [ ] Decidir motor (ver §15), contas, hospedagem, custos de IA, termos de uso.
@@ -450,7 +465,15 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
   - Caminho 1: lançar o Maestro como **open source** (AGPL) e monetizar de outra forma (hospedado, recursos de IA, samples premium).
   - Caminho 2: trocar o motor por um próprio sobre **Tone.js (MIT)** / Web Audio. O **Engine adapter** existe para tornar isso viável sem reescrever o resto.
   - Decisão adiada para a Fase 7, mas **toda dependência direta do Strudel fica dentro de `src/engine/` e `src/compiler/`**.
-- **Samples:** só usar samples com licença que permita uso comercial da música gerada (CC0 ou equivalente) antes de publicar no Spotify/YouTube. Registrar a origem/licença de cada banco em `presets/`.
+- **Samples:** só usar samples com licença que permita uso comercial da música gerada (CC0 ou equivalente) antes de publicar no Spotify/YouTube.
+
+  | banco | usado em | licença | publicar comercialmente? |
+  |---|---|---|---|
+  | VCSL (Versilian Community Sample Library) | piano, marimba, vibrafone, kalimba, harpa, glockenspiel, órgão, taças | CC0 | sim |
+  | osciladores do Strudel (saw, square, supersaw, sine, ruído) | baixos, pads, leads, coro sintético, riser | gerados (sem sample) | sim |
+  | tidal-drum-machines (909, 808, 707) | bateria | amostras de máquinas comerciais, licença não declarada | **verificar** / trocar por kit CC0 antes de vender |
+  | dirt-samples | carregado, mas não usado pelos estilos (só via código livre) | licenças mistas | **evitar** em música publicada |
+  | samples do usuário (`public/samples`) | o que você colocar | sua responsabilidade | depende |
 - **Áudio gerado por IA (Lyria etc.):** checar os termos do provedor antes de publicar comercialmente.
 - **z.ai:** só gera *comandos*, não áudio — sem impacto nos direitos da música.
 - **Encoder MP3:** `@breezystack/lamejs` é LGPL-3.0 (LAME). Uso pessoal ok; num produto fechado, usar como biblioteca separada ou trocar por encoder do navegador/servidor.
@@ -504,6 +527,11 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 31 | 2026-10-25 | Ops permitidas por nível, validadas no Conductor | O nível de autonomia é garantido pelo código, não só pelo prompt |
 | 32 | 2026-10-25 | Variações locais como reserva (e modo sem IA) | O piloto nunca para por causa de rede/limite/chave; plano grátis aguenta |
 | 33 | 2026-10-25 | Maestro separado para o piloto | Pedidos internos não poluem a memória da conversa do usuário |
+| 34 | 2026-10-26 | Limitador na saída master + 20% de folga no ganho | Medição mostrou 0,37% de amostras estouradas; agora zero |
+| 35 | 2026-10-26 | Instrumentos reais só da VCSL (CC0) | Licença livre inclusive comercial; dirt-samples tem licenças incertas |
+| 36 | 2026-10-26 | Vocais reais via samples do usuário (`public/samples`) | Não há banco livre de vocais; o usuário traz os seus |
+| 37 | 2026-10-26 | Código livre com lista de palavras proibidas + consulta de 4 compassos antes de entrar | Dá criatividade à IA sem arriscar o som nem o navegador |
+| 38 | 2026-10-26 | Lyria RealTime adiado (pesquisado) | Outra chave/conta, áudio no servidor, termos a checar; vale depois da validação de ouvido |
 
 ---
 

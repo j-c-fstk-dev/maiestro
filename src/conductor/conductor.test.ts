@@ -129,3 +129,16 @@ describe('Conductor — dois decks', () => {
     expect(ctx).toContain('estilo melodic');
   });
 });
+
+describe('Conductor — código livre', () => {
+  it('código que não roda volta como erro para a IA, que corrige', async () => {
+    const bad = { reply: 'x', plans: [{ when: 'bar', label: 'shaker', ops: [{ op: 'set_raw', layer: 'perc', code: 's("hh*16").quebrado()' }] }] };
+    const good = { reply: 'ok', plans: [{ when: 'bar', label: 'shaker', ops: [{ op: 'set_raw', layer: 'perc', code: 's("hh*16").degradeBy(0.3)' }] }] };
+    const { conductor, engine, tl, llm } = await setup(bad, good);
+    engine.failCode = (code) => code.includes('quebrado()');
+    const r = await conductor.ask('shaker solto na percussão');
+    expect(r.attempts).toBe(2);
+    expect(llm.calls[1].at(-1)!.content).toMatch(/não roda no motor/);
+    expect(tl.stateAt(Infinity).decks.A.layers.perc!.code).toBe('s("hh*16").degradeBy(0.3)');
+  });
+});

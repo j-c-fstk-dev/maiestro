@@ -73,6 +73,20 @@ export const INSTRUMENTS: Instrument[] = [
   { id: 'vox_chop', label: 'vocal picado', kind: 'synth', layers: ['vocal'], sound: 'square', octave: 5, gain: 0.14,
     vowel: 'e', params: { decay: 0.12, sustain: 0, room: 0.6, delay: 0.45 } },
 
+  // instrumentos reais (samples VCSL, CC0)
+  { id: 'piano', label: 'piano Steinway', kind: 'synth', layers: ['chords', 'lead'], sound: 'steinway', octave: 3, gain: 0.55,
+    params: { release: 0.8, room: 0.3 } },
+  { id: 'marimba', label: 'marimba', kind: 'synth', layers: ['lead', 'chords'], sound: 'marimba', octave: 4, gain: 0.6, params: { room: 0.25 } },
+  { id: 'vibraphone', label: 'vibrafone', kind: 'synth', layers: ['chords', 'lead'], sound: 'vibraphone', octave: 4, gain: 0.5,
+    params: { room: 0.45, release: 1 } },
+  { id: 'kalimba', label: 'kalimba', kind: 'synth', layers: ['lead'], sound: 'kalimba', octave: 4, gain: 0.6, params: { room: 0.35, delay: 0.25 } },
+  { id: 'harp', label: 'harpa', kind: 'synth', layers: ['lead', 'chords'], sound: 'harp', octave: 4, gain: 0.5, params: { room: 0.5 } },
+  { id: 'glocken', label: 'glockenspiel', kind: 'synth', layers: ['lead'], sound: 'glockenspiel', octave: 5, gain: 0.35, params: { room: 0.5 } },
+  { id: 'pipe_organ', label: 'órgão de tubos', kind: 'synth', layers: ['chords'], sound: 'pipeorgan_quiet', octave: 3, gain: 0.35,
+    params: { room: 0.6, release: 1.2 } },
+  { id: 'wineglass', label: 'taças de cristal', kind: 'synth', layers: ['vocal', 'chords'], sound: 'wineglass_slow', octave: 4, gain: 0.45,
+    params: { room: 0.9, release: 2 } },
+
   // efeitos
   { id: 'noise_riser', label: 'riser de ruído', kind: 'synth', layers: ['fx'], sound: 'white', gain: 0.25,
     params: { hpf: 1200, decay: 0.1, sustain: 0 } },

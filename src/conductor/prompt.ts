@@ -9,7 +9,7 @@ import type { Entry } from '../scheduler/timeline';
 
 /** System prompt do maestro (v1). Gerado a partir do catálogo, então nunca fica desatualizado. */
 
-export const PROMPT_VERSION = 'v2';
+export const PROMPT_VERSION = 'v3';
 
 function catalog(): string {
   return LAYER_IDS.map((layer) => {
@@ -66,6 +66,15 @@ Planos são executados em ordem. Use vários planos para pedidos em etapas.
     toca essas seções UMA vez a partir do "when" e depois o arranjo continua de onde estava ("faz um build e um drop")
 - {"op":"set_arrangement","sections":[{"type":"intro","bars":16}, ...]}   troca o arranjo inteiro (raro)
 - {"op":"jump_to","section":"breakdown"}   pula para a próxima seção desse tipo do arranjo
+
+## Código livre (só quando o catálogo não tiver o que foi pedido)
+- {"op":"set_raw","layer":"perc","code":"<expressão Strudel>","gain":0-1.5}  a camada passa a tocar esse código.
+  Regras: UMA expressão (sem ;, sem variáveis, sem setcpm/samples/hush). 1 ciclo = 1 compasso.
+  Notas pela escala do deck: n("0 2 4 7").scale("<tônica><oitava>:<escala>") — use a tônica/escala atuais, ex.: .scale("A3:minor").
+  Sons: osciladores sawtooth/square/triangle/sine/supersaw, ruído white/pink, bancos .bank("RolandTR909"|"RolandTR808")
+  com bd/sd/cp/hh/oh/rim/lt/mt/cr, e samples como "steinway", "marimba", "kalimba", "harp", "wineglass_slow", "glockenspiel".
+  Exemplos: s("[~ cp]*2").bank("RolandTR808").room(0.4) · n("0 ~ 7 5").scale("D4:dorian").s("kalimba").delay(0.3)
+  Prefira sempre o catálogo; código que não rodar é descartado sem afetar a música.
 
 ## Dois decks (como um DJ)
 Há dois decks, A e B, no mesmo relógio. Um está NO AR (é o que se ouve); o outro fica preparado em silêncio.

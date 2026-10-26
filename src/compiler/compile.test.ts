@@ -93,7 +93,7 @@ describe('compile', () => {
         expect(onsets(pat, 0, 4).length, `${p.id} + ${inst.id}`).toBeGreaterThan(0);
       }
     }
-  });
+  }, 60_000);
 });
 
 describe('compile — mixagem', () => {
@@ -137,5 +137,23 @@ describe('compile — mixagem', () => {
     const hs = onsets(pat, 64, 64.25);
     expect(hs.filter((h: any) => h.value.orbit < 10).every((h: any) => h.value.postgain === 0)).toBe(true);
     expect(hs.some((h: any) => h.value.orbit > 10 && h.value.postgain === 1)).toBe(true);
+  });
+});
+
+describe('compile — camada raw', () => {
+  it('código livre toca, com ganho e orbit do app', async () => {
+    const s = applyOp(STYLES[0].build(), { op: 'set_raw', layer: 'perc', code: 's("[~ cp]*2").bank("RolandTR808")', gain: 0.5 }, 0);
+    const drop = { ...s, arrangement: [{ type: 'drop' as const, bars: 8, mute: [] }] };
+    const code = compile(drop);
+    expect(code).toContain('(s("[~ cp]*2").bank("RolandTR808")).gain(0.4).orbit(1)');
+    const pat = await evalCode(code);
+    expect(onsets(pat, 0, 1).filter((h: any) => h.value.s === 'cp' && h.value.bank === 'RolandTR808').length).toBe(2);
+  });
+
+  it('trocar o padrão de uma camada raw volta a ser camada normal', () => {
+    const raw = applyOp(STYLES[0].build(), { op: 'set_raw', layer: 'perc', code: 's("cp")' }, 0);
+    const back = applyOp(raw, { op: 'set_pattern', layer: 'perc', pattern: 'toms' }, 0);
+    expect(back.layers.perc).toMatchObject({ pattern: 'toms', instrument: 'tr909' });
+    expect(back.layers.perc!.code).toBeUndefined();
   });
 });

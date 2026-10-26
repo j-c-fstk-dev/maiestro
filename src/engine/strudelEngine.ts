@@ -1,6 +1,7 @@
 import { initStrudel, initAudio, samples, getAudioContext, getSuperdoughAudioController } from '@strudel/web';
 import { switchAt } from './switchAt';
 import { installArrangeHelpers } from './arrange';
+import { forbiddenIn } from './safety';
 
 /**
  * Adapter do motor de áudio. É a única parte do app (junto com o compiler)
@@ -14,6 +15,16 @@ import { installArrangeHelpers } from './arrange';
 /** Antecedência mínima (em segundos) para agendar uma troca com segurança.
  *  O scheduler do Strudel consulta ~0.2 s à frente; deixamos folga. */
 const MIN_LEAD_SECONDS = 0.35;
+
+/** Bancos de samples carregados no início. VCSL é CC0 (livre até para uso comercial). */
+const SAMPLE_BANKS = [
+  'github:tidalcycles/dirt-samples',
+  'https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json',
+  'https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json',
+];
+/** Samples do próprio usuário (opcional): public/samples/strudel.json */
+const USER_SAMPLES = '/samples/strudel.json';
+
 
 export interface EngineEvents {
   onError?: (err: Error) => void;
@@ -34,6 +45,11 @@ export class StrudelEngine {
   private queue: Promise<unknown> = Promise.resolve();
   private bpm = 128;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private master: { limiter: DynamicsCompressorNode; out: GainNode } | null = null;
+  /** samples do usuário encontrados em public/samples */
+  userSamples = false;
+  /** mensagem do último código recusado */
+  lastError: string | null = null;
 
   constructor(private events: EngineEvents = {}) {}
 
@@ -41,17 +57,22 @@ export class StrudelEngine {
     this.initPromise ??= (async () => {
       installArrangeHelpers();
       this.repl = await initStrudel({
+        // um banco que falhar (rede) não impede os outros nem o app
         prebake: () =>
           Promise.all([
-            samples('github:tidalcycles/dirt-samples'),
-            samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
+            ...SAMPLE_BANKS.map((b) => samples(b).catch((e: Error) => console.warn('samples', b, e))),
+            this.loadUserSamples(),
           ]),
         editPattern: (pat: any) => this.onEvaluated(pat),
-        onEvalError: (err: Error) => this.events.onError?.(err),
+        onEvalError: (err: Error) => {
+          this.lastError = err.message;
+          this.events.onError?.(err);
+        },
       });
       // O Strudel só carrega os AudioWorklets (supersaw, DJ filter…) num clique do mouse.
       // Como o play também vem do teclado, carregamos aqui (init é chamado num gesto do usuário).
       await Promise.all([initAudio(), getAudioContext().resume()]);
+      this.installLimiter();
       this.setBpm(this.bpm);
       this.timer = setInterval(() => this.promote(), 250);
     })();
@@ -115,16 +136,41 @@ export class StrudelEngine {
     return getAudioContext();
   }
 
-  /** Liga um nó na saída master (depois de todos os efeitos), para gravar. */
+  /** Liga um nó na saída final (depois do limitador), para gravar exatamente o que se ouve. */
   connectOutput(node: AudioNode) {
-    masterNode().connect(node);
+    (this.master?.out ?? masterNode()).connect(node);
   }
 
   disconnectOutput(node: AudioNode) {
     try {
-      masterNode().disconnect(node);
+      (this.master?.out ?? masterNode()).disconnect(node);
     } catch {
       // já desconectado (ex.: o Strudel recriou a saída)
+    }
+  }
+
+  /**
+   * Limitador na saída master: segura os picos (drops com muitas camadas estouravam)
+   * e deixa ~1 dB de folga para a gravação nunca bater no teto.
+   */
+  private installLimiter() {
+    const ctx = getAudioContext();
+    const src = masterNode();
+    const limiter = new DynamicsCompressorNode(ctx, { threshold: -4, knee: 2, ratio: 20, attack: 0.002, release: 0.12 });
+    const out = new GainNode(ctx, { gain: 0.89 });
+    src.disconnect();
+    src.connect(limiter).connect(out).connect(ctx.destination);
+    this.master = { limiter, out };
+  }
+
+  private async loadUserSamples() {
+    try {
+      const res = await fetch(USER_SAMPLES, { method: 'HEAD' });
+      if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) return;
+      await samples(location.origin + USER_SAMPLES);
+      this.userSamples = true;
+    } catch {
+      // sem samples do usuário: tudo bem
     }
   }
 
@@ -135,8 +181,15 @@ export class StrudelEngine {
 
   /** Avaliações em série: `target` é compartilhado com o hook editPattern. */
   private run(target: number | null, code: string): Promise<boolean> {
+    const bad = forbiddenIn(code);
+    if (bad) {
+      this.lastError = `usa "${bad}", que não é permitido`;
+      this.events.onError?.(new Error(`código recusado: ${this.lastError}`));
+      return Promise.resolve(false);
+    }
     const job = this.queue.then(async () => {
       this.target = target;
+      this.lastError = null;
       try {
         const result = await this.repl.evaluate(code, true);
         return !!result; // undefined = erro de avaliação (o que tocava continua)
@@ -149,6 +202,10 @@ export class StrudelEngine {
   }
 
   private onEvaluated(pat: any) {
+    // Um pattern que quebra ao ser consultado derrubaria o som a cada tick do scheduler:
+    // testamos alguns compassos antes de aceitar. Lançar aqui = erro de avaliação (o que tocava continua).
+    const from = this.target ?? 0;
+    pat.queryArc(from, from + 4);
     if (this.target === null || !this.committed) {
       this.committed = pat;
       this.pending = [];

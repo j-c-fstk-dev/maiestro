@@ -143,3 +143,12 @@ button { font: inherit; color: inherit; }
 .auto-label { display: inline-flex; align-items: center; gap: 8px; }
 .auto-label input[type='range'] { width: 140px; accent-color: var(--accent); }
 .auto .stats { margin-left: auto; font-size: 12px; }
+
+/* ajuda */
+.help-btn { padding: 2px 9px; }
+.help {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, 100vw); overflow: auto; z-index: 10;
+  background: var(--panel); border-left: 1px solid var(--accent); padding: 14px 16px; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
+}
+.help-head { display: flex; justify-content: space-between; align-items: center; }
+.help pre { white-space: pre-wrap; font-size: 12.5px; line-height: 1.55; color: var(--fg); }

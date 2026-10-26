@@ -17,18 +17,23 @@ export interface PatternDef {
 
 const PROG = '<0 -2 -4 -1>';
 const CHORDS = '<[0,2,4] [-2,0,2] [-4,-2,0] [-1,1,3]>';
+const CHORDS7 = '<[0,2,4,6] [-2,0,2,4] [-4,-2,0,2] [-1,1,3,5]>';
 
 export const PATTERNS: PatternDef[] = [
   // kick
   { id: 'four', layer: 'kick', label: 'quatro no chão', src: 's("bd*4")' },
   { id: 'four_fill', layer: 'kick', label: 'quatro com virada', src: 's("<bd*4 bd*4 bd*4 [bd bd bd [bd bd]]>")' },
   { id: 'broken', layer: 'kick', label: 'quebrado', src: 's("bd ~ ~ bd ~ ~ bd ~")' },
+  { id: 'dnb', layer: 'kick', label: 'drum & bass', src: 's("bd ~ ~ ~ ~ ~ ~ ~ ~ ~ bd ~ ~ ~ ~ ~")' },
+  { id: 'lofi', layer: 'kick', label: 'lo-fi', src: 's("bd ~ ~ ~ ~ ~ ~ bd ~ ~ bd ~ ~ ~ ~ ~")' },
   { id: 'sparse', layer: 'kick', label: 'esparso', src: 's("bd ~ ~ ~ ~ ~ bd ~ ~ ~ ~ ~ ~ ~ ~ ~")' },
 
   // clap / snare
   { id: 'backbeat', layer: 'clap', label: 'clap no 2 e 4', src: 's("~ cp ~ cp")' },
   { id: 'snare_backbeat', layer: 'clap', label: 'caixa no 2 e 4', src: 's("~ sd ~ sd")' },
   { id: 'clap_shuffle', layer: 'clap', label: 'clap com ghost', src: 's("~ cp ~ [cp ~ ~ cp?]")' },
+  { id: 'dnb_snare', layer: 'clap', label: 'caixa drum & bass', src: 's("~ ~ ~ ~ sd ~ ~ ~ ~ ~ ~ ~ sd ~ ~ [~ sd?]")' },
+  { id: 'lofi_snare', layer: 'clap', label: 'caixa lo-fi', src: 's("~ sd ~ sd").velocity(0.7)' },
   { id: 'snare_roll', layer: 'clap', label: 'rufada (build)', src: 's("sd*16").velocity(saw.range(0.3, 1))' },
 
   // hats
@@ -36,6 +41,8 @@ export const PATTERNS: PatternDef[] = [
   { id: 'eighth', layer: 'hats', label: 'colcheias', src: 's("hh*8").velocity("[0.6 1]*4")' },
   { id: 'sixteenth', layer: 'hats', label: 'semicolcheias', src: 's("hh*16").velocity("[0.5 0.8 0.6 1]*4")' },
   { id: 'open_offbeat', layer: 'hats', label: 'aberto no contratempo', src: 's("[~ oh]*4")' },
+  { id: 'rolling16', layer: 'hats', label: 'rolante 16', src: 's("hh*16").velocity("[0.4 0.9 0.6 1]*4").degradeBy(0.08)' },
+  { id: 'swing', layer: 'hats', label: 'swing', src: 's("hh*8").velocity("[1 0.5]*4").late("[0 0.02]*4")' },
   { id: 'shuffle', layer: 'hats', label: 'swing aleatório', src: 's("[hh hh? hh hh?]*4").velocity("[1 0.6]*8")' },
 
   // percussão
@@ -48,12 +55,15 @@ export const PATTERNS: PatternDef[] = [
   { id: 'rolling', layer: 'bass', label: 'rolante', src: `n("${PROG}").struct("[~ x x x]*4")` },
   { id: 'acid_line', layer: 'bass', label: 'linha acid', src: `n("0 0 7 0 [0 3] 0 6 [0 7]".add("${PROG}"))` },
   { id: 'house_walk', layer: 'bass', label: 'house', src: `n("0 ~ 0 7 ~ 0 ~ 0".add("${PROG}"))` },
+  { id: 'dnb_reese', layer: 'bass', label: 'reese drum & bass', src: `n("${PROG}").struct("x ~ ~ ~ ~ ~ x ~ ~ ~ ~ ~ ~ ~ ~ ~")` },
   { id: 'long', layer: 'bass', label: 'nota longa', src: `n("${PROG}")` },
 
   // acordes
   { id: 'pad_long', layer: 'chords', label: 'acorde por compasso', src: `n("${CHORDS}")` },
   { id: 'stab_offbeat', layer: 'chords', label: 'stab no contratempo', src: `n("${CHORDS}").struct("[~ x]*4")` },
   { id: 'house_stab', layer: 'chords', label: 'stab house', src: `n("${CHORDS}").struct("~ x ~ [~ x] ~ x ~ ~")` },
+  { id: 'jazz7', layer: 'chords', label: 'acordes com sétima', src: `n("${CHORDS7}")` },
+  { id: 'lofi_keys', layer: 'chords', label: 'teclas lo-fi', src: `n("${CHORDS7}").struct("x ~ ~ [~ x] ~ ~ x ~")` },
   { id: 'pulse', layer: 'chords', label: 'pulsando', src: `n("${CHORDS}").struct("x*8")` },
 
   // lead

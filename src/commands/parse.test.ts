@@ -55,3 +55,14 @@ describe('parseCommand — dois decks', () => {
     expect(p('/deck b')).toEqual({ kind: 'target', deck: 'B' });
   });
 });
+
+describe('parseCommand — cenas e código', () => {
+  it('/raw guarda o código inteiro', () => {
+    expect(p('/raw perc s("[~ cp]*2").bank("RolandTR808")')).toMatchObject({ ops: [{ op: 'set_raw', layer: 'perc', code: 's("[~ cp]*2").bank("RolandTR808")' }] });
+  });
+  it('/save e /recall', () => {
+    expect(p('/save noite')).toEqual({ kind: 'scene', action: 'save', name: 'noite', deck: 'A' });
+    expect(p('/recall noite')).toEqual({ kind: 'scene', action: 'recall', name: 'noite', deck: 'B' });
+    expect(p('/scenes')).toMatchObject({ kind: 'scene', action: 'list' });
+  });
+});

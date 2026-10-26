@@ -14,6 +14,7 @@ import { SessionLog, type SessionFile } from '../recorder/sessionLog';
 import { encodeWav } from '../recorder/wav';
 import { encodeMp3 } from '../recorder/mp3';
 import type { PcmData } from '../recorder/pcm';
+import { forgetScene, getScene, listScenes, saveScene } from './scenes';
 
 /** Liga motor + linha do tempo + estado da UI. Uma instância por página. */
 
@@ -38,6 +39,7 @@ interface UiState {
   auto: { autonomy: number; useAi: boolean; stats: AutopilotStats; busy: boolean };
   /** uso da IA pelos pedidos do usuário */
   ai: { calls: number; tokens: number };
+  showHelp: boolean;
   /** gravação em andamento */
   rec: { seconds: number; bytes: number; peak: number } | null;
   recordings: Recording[];
@@ -78,6 +80,7 @@ export const useUi = create<UiState>(() => ({
   target: 'A',
   auto: { autonomy: 0, useAi: true, stats: { aiMoves: 0, localMoves: 0, aiTokens: 0, rotations: 0 }, busy: false },
   ai: { calls: 0, tokens: 0 },
+  showHelp: false,
   rec: null,
   recordings: [],
 }));
@@ -212,9 +215,12 @@ export async function run(input: string) {
         log(a ? `piloto automático em ${a}%: ${tierLabel(a)}${autopilot.useAi ? '' : ' (sem IA)'}` : 'piloto automático desligado', 'ok');
         return;
       }
+      case 'scene':
+        return scene(cmd.action, cmd.name, cmd.deck);
       case 'target':
         return setTarget(cmd.deck);
       case 'info':
+        if (cmd.text === HELP) useUi.setState({ showHelp: true });
         log(cmd.text);
         return;
       case 'play':
@@ -247,6 +253,31 @@ export async function run(input: string) {
       log(`erro inesperado: ${(err as Error).message}`, 'err');
     }
   }
+}
+
+async function scene(action: 'save' | 'recall' | 'list' | 'forget', name: string | undefined, deck: DeckId) {
+  if (action === 'list') {
+    const all = listScenes();
+    log(all.length ? all.map((c) => `${c.name.padEnd(16)} ${c.state.name} · ${c.state.bpm} BPM · ${c.state.key.root} ${c.state.key.scale}`).join('\n') : 'nenhuma cena salva (/save <nome>)');
+    return;
+  }
+  if (action === 'save') {
+    const ok = saveScene(name!, timeline.stateAt(Infinity).decks[deck]);
+    log(ok ? `cena "${name}" salva (deck ${deck})` : 'não deu para salvar (armazenamento do navegador bloqueado?)', ok ? 'ok' : 'err');
+    return;
+  }
+  if (action === 'forget') {
+    log(forgetScene(name!) ? `cena "${name}" apagada` : `não existe cena "${name}"`, 'warn');
+    return;
+  }
+  const sc = getScene(name!);
+  if (!sc) {
+    log(`não existe cena "${name}" (/scenes lista as salvas)`, 'err');
+    return;
+  }
+  const live = timeline.stateAt(Infinity).live === deck;
+  const cycle = await timeline.schedule([{ op: 'load', state: sc.state, deck }], { at: live ? 'section' : 'bar' }, `deck ${deck} ← cena ${name}`);
+  log(cycle === null ? `deck ${deck} ← cena ${name}` : `agendado p/ compasso ${cycle}: deck ${deck} ← cena ${name}`, 'ok');
 }
 
 export async function undo() {
@@ -292,6 +323,10 @@ const WARN_EVERY_SEC = 10 * 60;
 
 function session(e: Parameters<SessionLog['add']>[0]) {
   sessionLog?.add(e);
+}
+
+export function toggleHelp(show?: boolean) {
+  useUi.setState((s) => ({ showHelp: show ?? !s.showHelp }));
 }
 
 export async function toggleRecording() {

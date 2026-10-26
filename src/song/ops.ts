@@ -41,6 +41,8 @@ const DeckOpSchemas = [
   }),
   z.object({ op: z.literal('add_layer'), layer: LayerIdSchema, value: LayerSchema, ...deck }),
   z.object({ op: z.literal('remove_layer'), layer: LayerIdSchema, ...deck }),
+  /** camada com código Strudel livre (validado pelo engine antes de tocar) */
+  z.object({ op: z.literal('set_raw'), layer: LayerIdSchema, code: z.string().min(1).max(2000), gain: z.number().min(0).max(1.5).optional(), ...deck }),
   /** substitui o arranjo; ele recomeça do início no ciclo em que a op for aplicada */
   z.object({ op: z.literal('set_arrangement'), sections: z.array(SectionSchema).min(1), ...deck }),
   /** toca estas seções uma vez a partir do ciclo da op; depois o arranjo segue de onde estava
@@ -149,13 +151,28 @@ export function applyDeckOp(state: SongState, op: DeckOp, cycle: number): SongSt
     case 'set_pattern': {
       const p = PATTERNS_BY_ID[op.pattern];
       if (!p || p.layer !== op.layer) throw new OpError(`padrão ${op.pattern} não existe para ${op.layer}`);
-      layerOf(op.layer).pattern = op.pattern;
+      const l = layerOf(op.layer);
+      l.pattern = op.pattern;
+      if (l.code) {
+        delete l.code; // volta a ser uma camada normal
+        if (!INSTRUMENTS_BY_ID[l.instrument]?.layers.includes(op.layer)) l.instrument = defaultInstrument(op.layer);
+      }
       break;
     }
     case 'set_instrument': {
       const i = INSTRUMENTS_BY_ID[op.instrument];
       if (!i || !i.layers.includes(op.layer)) throw new OpError(`instrumento ${op.instrument} não serve para ${op.layer}`);
-      layerOf(op.layer).instrument = op.instrument;
+      const l = layerOf(op.layer);
+      l.instrument = op.instrument;
+      if (l.code) {
+        delete l.code;
+        if (PATTERNS_BY_ID[l.pattern]?.layer !== op.layer) l.pattern = defaultPattern(op.layer);
+      }
+      break;
+    }
+    case 'set_raw': {
+      const prev = s.layers[op.layer];
+      s.layers[op.layer] = { instrument: 'raw', pattern: 'raw', gain: op.gain ?? prev?.gain ?? 1, muted: false, fx: {}, code: op.code.trim() };
       break;
     }
     case 'set_fx':
@@ -169,6 +186,10 @@ export function applyDeckOp(state: SongState, op: DeckOp, cycle: number): SongSt
     case 'add_layer': {
       const i = INSTRUMENTS_BY_ID[op.value.instrument];
       const p = PATTERNS_BY_ID[op.value.pattern];
+      if (op.value.code) {
+        s.layers[op.layer] = op.value; // camada raw (ex.: desfazer devolvendo uma camada de código)
+        break;
+      }
       if (!i || !i.layers.includes(op.layer)) throw new OpError(`instrumento ${op.value.instrument} não serve para ${op.layer}`);
       if (!p || p.layer !== op.layer) throw new OpError(`padrão ${op.value.pattern} não existe para ${op.layer}`);
       s.layers[op.layer] = op.value;
@@ -208,6 +229,10 @@ export function applyDeckOp(state: SongState, op: DeckOp, cycle: number): SongSt
   }
   return s;
 }
+
+const defaultInstrument = (layer: z.infer<typeof LayerIdSchema>) =>
+  Object.values(INSTRUMENTS_BY_ID).find((i) => i.layers.includes(layer))!.id;
+const defaultPattern = (layer: z.infer<typeof LayerIdSchema>) => Object.values(PATTERNS_BY_ID).find((p) => p.layer === layer)!.id;
 
 /**
  * Ops que desfazem `ops` a partir da mixagem `before` (usado em "por N compassos").
@@ -252,6 +277,9 @@ export function inverseOps(before: MixState, ops: Op[]): Op[] {
         break;
       case 'remove_layer':
         if (layer) push({ op: 'add_layer', layer: op.layer, value: layer });
+        break;
+      case 'set_raw':
+        push(layer ? { op: 'add_layer', layer: op.layer, value: layer } : { op: 'remove_layer', layer: op.layer });
         break;
     }
   }

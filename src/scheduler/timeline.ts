@@ -1,5 +1,5 @@
 import { compile } from '../compiler/compile';
-import { applyOp, inverseOps, isDeckOp, type Op } from '../song/ops';
+import { OpError, applyOp, inverseOps, isDeckOp, type Op } from '../song/ops';
 import { PHRASE_BARS, positionAt, type When } from '../song/time';
 import { liveDeck, type MixState } from '../song/mix';
 
@@ -22,6 +22,8 @@ export interface EngineLike {
   stop(): void;
   setBpm(bpm: number): void;
   getBpm?(): number;
+  /** mensagem do último código recusado pelo motor */
+  readonly lastError?: string | null;
 }
 
 export type Source = 'user' | 'ai' | 'autopilot';
@@ -186,8 +188,11 @@ export class Timeline {
     applyAll(before, ops, cycle); // valida antes de agendar (lança OpError)
 
     const source = opts.source ?? 'user';
-    const add = (c: number, o: Op[], l: string) =>
+    const added = new Set<number>();
+    const add = (c: number, o: Op[], l: string) => {
+      added.add(this.nextId);
       this.pending.push({ id: this.nextId++, group, cycle: c, ops: o, label: l, source });
+    };
     add(cycle, ops, label);
 
     // seções inseridas tocam uma vez: no fim delas, o arranjo original volta
@@ -206,8 +211,12 @@ export class Timeline {
     }
     this.pending.sort((a, b) => a.cycle - b.cycle || a.id - b.id);
 
-    await this.reschedule(cycle);
+    const ok = await this.reschedule(cycle, added);
     this.emit();
+    if (!ok) {
+      // o motor recusou o código desta mudança: ela sai inteira e o resto continua como estava
+      throw new OpError(`o código gerado não roda no motor${this.engine.lastError ? ` (${this.engine.lastError})` : ''}; nada mudou`);
+    }
     return cycle;
   }
 
@@ -318,8 +327,12 @@ export class Timeline {
     }
   }
 
-  /** Recompila e reenvia ao motor todos os limites a partir de `fromCycle`. */
-  private async reschedule(fromCycle: number) {
+  /**
+   * Recompila e reenvia ao motor todos os limites a partir de `fromCycle`.
+   * Se o motor recusar o código e houver uma mudança "suspeita" (`culprit`, a recém-agendada),
+   * só ela é retirada e o resto é reenviado; devolve false nesse caso.
+   */
+  private async reschedule(fromCycle: number, culprit?: Set<number>): Promise<boolean> {
     const cycles = [...new Set(this.pending.filter((e) => e.cycle >= fromCycle).map((e) => e.cycle))];
     for (const c of cycles) {
       let code: string;
@@ -333,12 +346,19 @@ export class Timeline {
         continue;
       }
       const ok = await this.engine.schedule(code, c);
-      if (!ok) {
-        this.pending = this.pending.filter((e) => e.cycle !== c);
-        this.engine.cancelPending(c);
-        this.onError(`o código do compasso ${c} tem erro; mudança descartada`);
+      if (ok) continue;
+      if (culprit && this.pending.some((e) => culprit.has(e.id))) {
+        const from = Math.min(...this.pending.filter((e) => culprit.has(e.id)).map((e) => e.cycle));
+        this.pending = this.pending.filter((e) => !culprit.has(e.id));
+        this.engine.cancelPending(from);
+        await this.reschedule(from);
+        return false;
       }
+      this.pending = this.pending.filter((e) => e.cycle !== c);
+      this.engine.cancelPending(c);
+      this.onError(`o código do compasso ${c} tem erro; mudança descartada`);
     }
+    return true;
   }
 
   private emit() {

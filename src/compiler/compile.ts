@@ -28,11 +28,18 @@ const OPEN_LPF = 12000;
 
 const num = (n: number) => String(Math.round(n * 1000) / 1000);
 
+/** folga geral de volume: com várias camadas somadas os drops passavam do teto (o limitador do engine segura o resto) */
+const HEADROOM = 0.8;
+
 export class CompileError extends Error {}
 
 const ORBIT_OFFSET: Record<DeckId, number> = { A: 0, B: 10 };
 
 export function compileLayer(state: SongState, id: LayerId, layer: Layer, rise?: RiseCtx, orbitOffset = 0): string {
+  if (layer.code) {
+    // camada raw: o código é do usuário/IA; só ganho e orbit são nossos (validação no engine)
+    return `(${layer.code}).gain(${num(layer.gain * state.master.gain * HEADROOM)}).orbit(${ORBITS[id] + orbitOffset})`;
+  }
   const inst: Instrument | undefined = INSTRUMENTS_BY_ID[layer.instrument];
   const pattern = PATTERNS_BY_ID[layer.pattern];
   if (!inst) throw new CompileError(`instrumento desconhecido: ${layer.instrument}`);
@@ -66,7 +73,7 @@ export function compileLayer(state: SongState, id: LayerId, layer: Layer, rise?:
 
   // energia: bateria mais alta e mais presente
   const energyGain = DRUMS.includes(id) ? 0.75 + 0.35 * energy : 1;
-  const gain = inst.gain * layer.gain * energyGain * state.master.gain;
+  const gain = inst.gain * layer.gain * energyGain * state.master.gain * HEADROOM;
 
   for (const [k, v] of Object.entries(params)) parts.push(`.${k}(${num(v)})`);
 
