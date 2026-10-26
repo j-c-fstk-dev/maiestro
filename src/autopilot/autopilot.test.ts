@@ -10,6 +10,7 @@ import { Conductor, type ChatFn } from '../conductor/conductor';
 import { FakeEngine } from '../test/fakeEngine';
 import { testMix } from '../test/mix';
 import { installArrangeHelpers } from '../engine/arrange';
+import { renderParts } from '../compiler/compile';
 
 async function setup(opts: { chat?: ChatFn; autonomy?: number; rng?: () => number; clock?: () => number } = {}) {
   const engine = new FakeEngine();
@@ -135,9 +136,9 @@ describe('Autopilot — 30 minutos sozinho (simulação)', () => {
     const { ap, run, engine, errors, tl } = await setup({ autonomy: 100, rng: seeded(42) });
     const codes = new Set<string>();
     const origSchedule = engine.schedule.bind(engine);
-    engine.schedule = async (code, cycle) => {
-      codes.add(code);
-      return origSchedule(code, cycle);
+    engine.schedule = async (parts, cycle) => {
+      codes.add(renderParts(parts));
+      return origSchedule(parts, cycle);
     };
     const styles = new Set<string>();
     // 30 min a ~128 BPM ≈ 960 compassos

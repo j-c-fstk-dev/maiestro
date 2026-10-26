@@ -1,4 +1,5 @@
 import type { EngineLike } from '../scheduler/timeline';
+import { renderParts, type MixParts } from '../compiler/compile';
 
 /** Motor de mentira para testes: guarda o que foi agendado e deixa o teste controlar o relógio. */
 export class FakeEngine implements EngineLike {
@@ -15,12 +16,13 @@ export class FakeEngine implements EngineLike {
   minCycle() {
     return this.cycle + 0.1;
   }
-  async play(code: string) {
+  async play(parts: MixParts) {
     this.isPlaying = true;
-    this.played.push(code);
+    this.played.push(renderParts(parts));
     return true;
   }
-  async schedule(code: string, cycle: number) {
+  async schedule(parts: MixParts, cycle: number) {
+    const code = renderParts(parts);
     if (this.failCode?.(code)) {
       this.lastError = 'código quebrado';
       return false;

@@ -13,8 +13,11 @@ Requisitos: Node 20+.
 ```bash
 npm install
 cp .env.example .env     # coloque sua chave da z.ai em LLM_API_KEY
-npm run dev              # abre em http://localhost:5173
+npm start                # versão otimizada (recomendado para tocar) — abre em http://localhost:5173
+# ou: npm run dev        # modo desenvolvimento (recarrega ao editar o código, mas é mais pesado)
 ```
+
+**Se o som picotar ou sumir** (aparece "⚠ áudio engasgou" no topo): use `npm start` em vez de `npm run dev`, feche outras abas pesadas e, se continuar, digite `/leve on` (troca os sintetizadores mais pesados por versões leves).
 
 ## Como usar
 
@@ -59,6 +62,7 @@ Coloque arquivos em `public/samples/` com um `strudel.json` — veja [`public/sa
 
 | comando | o que faz |
 |---|---|
+| `npm start` | versão otimizada + proxy da IA (recomendado para tocar) |
 | `npm run dev` | servidor de desenvolvimento + proxy da IA (`/api/llm`) |
 | `npm test` | testes (Vitest) — o compiler é testado rodando o Strudel de verdade; a IA é testada com respostas roteirizadas |
 | `npm run eval:ai` | avalia o maestro com a IA de verdade (35 pedidos, usa a chave do `.env`) e imprime um relatório |

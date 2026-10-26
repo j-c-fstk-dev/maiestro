@@ -30,6 +30,7 @@ export type Command =
   | { kind: 'rec' }
   | { kind: 'target'; deck: DeckId }
   | { kind: 'auto'; autonomy?: number; ai?: boolean }
+  | { kind: 'light'; on: boolean }
   | { kind: 'scene'; action: 'save' | 'recall' | 'list' | 'forget'; name?: string; deck: DeckId }
   | { kind: 'code' }
   | { kind: 'clear' }
@@ -74,6 +75,7 @@ piloto automático:
   /undo (ou Ctrl+Z)  desfaz o último comando/pedido · /panic (ou Esc) cancela tudo que está agendado
   /rec   começa/para a gravação (baixe WAV, MP3 e o registro da sessão no painel "gravações")
   /code  mostra o código Strudel   ·   /clear  limpa o log
+  /leve on|off  modo leve para máquinas modestas (som picotando/sumindo): supersaw vira serra, sem delay/reverb por camada
 camadas: ${LAYER_IDS.join(', ')} · seções: ${SECTION_TYPES.join(', ')}`;
 
 export function parseCommand(input: string, mix: MixState, target: DeckId = mix.live): Command {
@@ -142,6 +144,12 @@ export function parseCommand(input: string, mix: MixState, target: DeckId = mix.
     }
     case 'scenes':
       return { kind: 'scene', action: 'list', deck: target };
+    case 'leve':
+    case 'light': {
+      const v = (args[0] ?? 'on').toLowerCase();
+      if (v !== 'on' && v !== 'off') throw new CommandError('use /leve on ou /leve off');
+      return { kind: 'light', on: v === 'on' };
+    }
     case 'auto': {
       const a = (args[0] ?? '').toLowerCase();
       if (a === 'off') return { kind: 'auto', autonomy: 0 };

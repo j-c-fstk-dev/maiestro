@@ -157,3 +157,15 @@ describe('compile — camada raw', () => {
     expect(back.layers.perc!.code).toBeUndefined();
   });
 });
+
+describe('compile — modo leve', () => {
+  it('supersaw vira serra e camadas perdem delay/reverb (menos acordes e voz)', () => {
+    const m = testMix();
+    const normal = compileMix(m);
+    const light = compileMix(m, { light: true });
+    expect(normal).toContain('.s("supersaw")');
+    expect(light).not.toContain('supersaw');
+    expect(light).not.toContain('.delay(');
+    expect((light.match(/\.room\(/g) ?? []).length).toBeLessThan((normal.match(/\.room\(/g) ?? []).length);
+  });
+});

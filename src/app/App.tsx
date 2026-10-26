@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   discardRecording,
   downloadMp3,
@@ -25,7 +25,7 @@ import {
   useUi,
   type LogLine,
 } from './controller';
-import { useNow } from './useNow';
+import { useBar, useNow } from './useNow';
 import { STYLES } from '../presets/styles';
 import { INSTRUMENTS_BY_ID } from '../presets/instruments';
 import { PATTERNS_BY_ID } from '../presets/patterns';
@@ -45,8 +45,13 @@ const SECTION_LABEL: Record<string, string> = {
 };
 
 export function App() {
-  const { snap, showCode, loading, thinking, target } = useUi();
-  const now = useNow();
+  // seletores separados: o App só re-renderiza quando estes mudam (nada de relógio aqui —
+  // re-renderizar a tela inteira 10x/s roubava a thread do scheduler de áudio)
+  const snap = useUi((s) => s.snap);
+  const showCode = useUi((s) => s.showCode);
+  const loading = useUi((s) => s.loading);
+  const thinking = useUi((s) => s.thinking);
+  const target = useUi((s) => s.target);
   const { state: mix, playing, pending } = snap;
   const state = liveDeck(mix);
 
@@ -74,15 +79,15 @@ export function App() {
 
   return (
     <div className="app">
-      <Header state={state} playing={playing} now={now} pendingCount={pending.length} loading={loading} thinking={thinking} />
+      <Header state={state} playing={playing} pendingCount={pending.length} loading={loading} thinking={thinking} />
       <div className="main">
         <div className="col">
-          <Mixer mix={mix} playing={playing} now={now} />
+          <Mixer mix={mix} playing={playing} />
           {DECK_IDS.map((id) => (
-            <Deck key={id} id={id} mix={mix} playing={playing} now={now} target={target} />
+            <Deck key={id} id={id} mix={mix} playing={playing} target={target} />
           ))}
           {(!playing || target !== mix.live) && <Setup deck={target} current={mix.decks[target].style} loading={loading} playing={playing} />}
-          <Pending pending={pending} now={now} />
+          <Pending pending={pending} />
           <Recordings />
         </div>
         <div className="col">
@@ -124,35 +129,57 @@ function HelpPanel() {
   );
 }
 
-function Header({ state, playing, now, pendingCount, loading, thinking }: { state: SongState; playing: boolean; now: number; pendingCount: number; loading: boolean; thinking: string | null }) {
+/** A única parte do topo que muda com o relógio. */
+function Clock({ playing, bpm }: { playing: boolean; bpm: number }) {
+  const now = useNow();
   const bar = Math.floor(now);
   const beat = Math.floor((now % 1) * 4) + 1;
   return (
-    <header className="header">
-      <span className="brand">MAESTRO</span>
-      <span className={playing ? 'live' : 'dim'}>{loading ? '… carregando' : playing ? '▶ tocando' : '■ parado'}</span>
+    <>
       <span>
-        <b>{playing ? engine.getBpm().toFixed(1) : state.bpm}</b> BPM
-      </span>
-      <span>
-        tom <b>{state.key.root} {state.key.scale}</b>
-      </span>
-      <span className="dim">
-        escuridão {state.mood.darkness.toFixed(2)} · energia {state.mood.energy.toFixed(2)}
+        <b>{playing ? engine.getBpm().toFixed(1) : bpm}</b> BPM
       </span>
       {playing && (
         <span className="clock">
           compasso <b>{bar}</b> · <span className="beats">{[1, 2, 3, 4].map((b) => (b === beat ? '●' : '○')).join('')}</span>
         </span>
       )}
+    </>
+  );
+}
+
+function Header({ state, playing, pendingCount, loading, thinking }: { state: SongState; playing: boolean; pendingCount: number; loading: boolean; thinking: string | null }) {
+  return (
+    <header className="header">
+      <span className="brand">MAESTRO</span>
+      <span className={playing ? 'live' : 'dim'}>{loading ? '… carregando' : playing ? '▶ tocando' : '■ parado'}</span>
+      <Clock playing={playing} bpm={state.bpm} />
+      <span>
+        tom <b>{state.key.root} {state.key.scale}</b>
+      </span>
+      <span className="dim">
+        escuridão {state.mood.darkness.toFixed(2)} · energia {state.mood.energy.toFixed(2)}
+      </span>
       {pendingCount > 0 && <span className="warn">{pendingCount} agendada(s)</span>}
       {thinking && <span className="thinking">maestro pensando…</span>}
+      <PerfBadge />
       <RecButton />
       <button className="ghost help-btn" onClick={() => toggleHelp()} title="comandos e atalhos (? ou F1)">
         ?
       </button>
     </header>
   );
+}
+
+function PerfBadge() {
+  const perf = useUi((s) => s.perf);
+  if (perf.recentSkip)
+    return (
+      <span className="warn" title="o navegador não deu conta de preparar as notas a tempo; /leve on alivia">
+        ⚠ áudio engasgou{perf.light ? '' : ' · /leve on'}
+      </span>
+    );
+  return perf.light ? <span className="dim">modo leve</span> : null;
 }
 
 function RecButton() {
@@ -171,7 +198,7 @@ function RecButton() {
   );
 }
 
-function Recordings() {
+const Recordings = memo(function Recordings() {
   const recordings = useUi((s) => s.recordings);
   if (!recordings.length) return null;
   return (
@@ -205,16 +232,16 @@ function Recordings() {
       </ul>
     </section>
   );
-}
+});
 
-function Mixer({ mix, playing, now }: { mix: MixState; playing: boolean; now: number }) {
+function XFader({ mix }: { mix: MixState }) {
+  const now = useNow();
   const t = mix.transition;
   const x = t ? Math.min(1, Math.max(0, (now - t.start) / t.bars)) : mix.live === 'A' ? 0 : 1;
   // durante a transição o "fader" anda de um lado para o outro
   const pos = t ? (t.from === 'A' ? x : 1 - x) : x;
   return (
-    <section className="panel mixer">
-      <div className="xfader">
+    <div className="xfader">
         <span className={mix.live === 'A' || t ? 'live' : 'dim'}>A</span>
         <div className="track">
           <div className="knob" style={{ left: `calc(${pos * 100}% - 6px)` }} />
@@ -223,7 +250,15 @@ function Mixer({ mix, playing, now }: { mix: MixState; playing: boolean; now: nu
         <span className="dim">
           {t ? `${t.style} ${t.from}→${t.to} · ${Math.round(x * 100)}% · faltam ${Math.max(0, Math.ceil(t.start + t.bars - now))}c` : `no ar: deck ${mix.live}`}
         </span>
-      </div>
+    </div>
+  );
+}
+
+function Mixer({ mix, playing }: { mix: MixState; playing: boolean }) {
+  const t = mix.transition;
+  return (
+    <section className="panel mixer">
+      <XFader mix={mix} />
       <AutoControl />
       {playing && !t && (
         <div className="row">
@@ -239,7 +274,7 @@ function Mixer({ mix, playing, now }: { mix: MixState; playing: boolean; now: nu
   );
 }
 
-function AutoControl() {
+const AutoControl = memo(function AutoControl() {
   // dois seletores: um objeto novo a cada leitura faria o Zustand renderizar em loop
   const auto = useUi((s) => s.auto);
   const ai = useUi((s) => s.ai);
@@ -261,12 +296,13 @@ function AutoControl() {
       </span>
     </div>
   );
-}
+});
 
-function Deck({ id, mix, playing, now, target }: { id: DeckId; mix: MixState; playing: boolean; now: number; target: DeckId }) {
+function Deck({ id, mix, playing, target }: { id: DeckId; mix: MixState; playing: boolean; target: DeckId }) {
+  const bar = useBar(); // a lista de camadas só muda de compasso em compasso
   const state = mix.decks[id];
   const sounding = playing && (mix.live === id || mix.transition?.to === id || mix.transition?.from === id);
-  const pos = positionAt(state, sounding ? now : 0);
+  const pos = positionAt(state, sounding ? bar : 0);
   const section = state.arrangement[pos.index];
   const isLive = mix.live === id;
   const editing = target === id;
@@ -281,7 +317,7 @@ function Deck({ id, mix, playing, now, target }: { id: DeckId; mix: MixState; pl
         </span>
         {editing && <span className="badge badge-edit">editando</span>}
       </h2>
-      <Arrangement state={state} playing={sounding} now={now} />
+      <Arrangement state={state} playing={sounding} />
       {editing && <div className="layers">
         {LAYER_IDS.map((lid) => {
           const layer = state.layers[lid];
@@ -318,7 +354,8 @@ function Deck({ id, mix, playing, now, target }: { id: DeckId; mix: MixState; pl
   );
 }
 
-function Arrangement({ state, playing, now }: { state: SongState; playing: boolean; now: number }) {
+function Arrangement({ state, playing }: { state: SongState; playing: boolean }) {
+  const now = useNow();
   const pos = positionAt(state, playing ? now : 0);
   const total = loopLength(state.arrangement);
   return (
@@ -364,7 +401,8 @@ function Setup({ deck, current, loading, playing }: { deck: DeckId; current: str
   );
 }
 
-function Pending({ pending, now }: { pending: Entry[]; now: number }) {
+function Pending({ pending }: { pending: Entry[] }) {
+  const now = useBar();
   if (pending.length === 0) return null;
   return (
     <section className="panel">
@@ -375,7 +413,7 @@ function Pending({ pending, now }: { pending: Entry[]; now: number }) {
         {pending.map((e) => (
           <li key={e.id}>
             <span className="when">c{e.cycle}</span>
-            <span className="dim">em {Math.max(0, e.cycle - now).toFixed(1)} compassos</span>{' '}
+            <span className="dim">em {Math.max(0, e.cycle - now)} compassos</span>{' '}
             <span className={`src src-${e.source}`}>{e.source === 'ai' ? 'IA' : e.source === 'autopilot' ? 'auto' : 'você'}</span> {e.label}
           </li>
         ))}
@@ -384,7 +422,7 @@ function Pending({ pending, now }: { pending: Entry[]; now: number }) {
   );
 }
 
-function Log() {
+const Log = memo(function Log() {
   const lines = useUi((s) => s.log);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -400,11 +438,11 @@ function Log() {
       ))}
     </section>
   );
-}
+});
 
 const COMPLETIONS = ['/play', '/stop', '/rec', '/undo', '/insert', '/deck', '/load', '/copy', '/xfade', '/style', '/bpm', '/key', '/mute', '/unmute', '/gain', '/pattern', '/inst', '/add', '/remove', '/fx', '/filter', '/reverb', '/volume', '/mood', '/arr', '/goto', '/list', '/panic', '/code', '/clear', '/help'];
 
-function Prompt() {
+const Prompt = memo(function Prompt() {
   const target = useUi((s) => s.target);
   const [value, setValue] = useState('');
   const history = useRef<string[]>([]);
@@ -460,4 +498,4 @@ function Prompt() {
       </button>
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { compile } from '../compiler/compile';
+import { compile, compileParts, type CompileOptions, type MixParts } from '../compiler/compile';
 import { OpError, applyOp, inverseOps, isDeckOp, type Op } from '../song/ops';
 import { PHRASE_BARS, positionAt, type When } from '../song/time';
 import { liveDeck, type MixState } from '../song/mix';
@@ -16,8 +16,8 @@ export interface EngineLike {
   readonly isPlaying: boolean;
   now(): number;
   minCycle(): number;
-  play(code: string): Promise<boolean>;
-  schedule(code: string, cycle: number): Promise<boolean>;
+  play(parts: MixParts): Promise<boolean>;
+  schedule(parts: MixParts, cycle: number): Promise<boolean>;
   cancelPending(fromCycle?: number): void;
   stop(): void;
   setBpm(bpm: number): void;
@@ -75,6 +75,7 @@ export class Timeline {
   private listeners = new Set<(s: TimelineSnapshot) => void>();
   private onError: (msg: string) => void;
   private onApplied: (entry: Entry) => void;
+  private compileOpts: CompileOptions = {};
 
   constructor(
     private engine: EngineLike,
@@ -93,7 +94,7 @@ export class Timeline {
   }
 
   snapshot(): TimelineSnapshot {
-    return { state: this.committed, pending: [...this.pending], playing: this.engine.isPlaying, code: compile(this.committed) };
+    return { state: this.committed, pending: [...this.pending], playing: this.engine.isPlaying, code: compile(this.committed, this.compileOpts) };
   }
 
   get state() {
@@ -153,7 +154,7 @@ export class Timeline {
     this.history = [];
     this.ramp = null;
     this.engine.setBpm(liveDeck(this.committed).bpm);
-    const ok = await this.engine.play(compile(this.committed));
+    const ok = await this.engine.play(compileParts(this.committed, this.compileOpts));
     if (!ok) this.onError('o código gerado tem erro; nada foi tocado');
     this.emit();
   }
@@ -269,6 +270,20 @@ export class Timeline {
     return `desfazendo: ${lastApplied.label}`;
   }
 
+  get options(): CompileOptions {
+    return this.compileOpts;
+  }
+
+  /** Muda opções de compilação (ex.: modo leve): vale a partir do próximo compasso, sem mudar a música. */
+  async setOptions(opts: CompileOptions) {
+    this.compileOpts = { ...this.compileOpts, ...opts };
+    if (!this.engine.isPlaying) return this.emit();
+    const c = this.resolve({ at: 'bar' });
+    await this.engine.schedule(compileParts(this.stateAt(c), this.compileOpts), c);
+    await this.reschedule(c + 0.001);
+    this.emit();
+  }
+
   /** Cancela tudo que está agendado. */
   panic() {
     this.engine.cancelPending();
@@ -335,9 +350,9 @@ export class Timeline {
   private async reschedule(fromCycle: number, culprit?: Set<number>): Promise<boolean> {
     const cycles = [...new Set(this.pending.filter((e) => e.cycle >= fromCycle).map((e) => e.cycle))];
     for (const c of cycles) {
-      let code: string;
+      let parts: MixParts;
       try {
-        code = compile(this.stateAt(c));
+        parts = compileParts(this.stateAt(c), this.compileOpts);
       } catch (err) {
         // uma mudança posterior ficou inválida (ex.: mexe numa camada removida antes): descarta
         const dropped = this.pending.filter((e) => e.cycle === c);
@@ -345,7 +360,7 @@ export class Timeline {
         this.onError(`descartado (${dropped.map((d) => d.label).join(', ')}): ${(err as Error).message}`);
         continue;
       }
-      const ok = await this.engine.schedule(code, c);
+      const ok = await this.engine.schedule(parts, c);
       if (ok) continue;
       if (culprit && this.pending.some((e) => culprit.has(e.id))) {
         const from = Math.min(...this.pending.filter((e) => culprit.has(e.id)).map((e) => e.cycle));

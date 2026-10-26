@@ -1,17 +1,25 @@
 import { useEffect, useState } from 'react';
 import { engine } from './controller';
 
-/** Posição atual em ciclos, atualizada a cada frame. */
+/** Atualizações da tela por segundo: suficiente para compasso/tempo e não disputa a thread com o áudio. */
+const FPS = 10;
+
+/** Posição atual em ciclos. */
 export function useNow(): number {
   const [now, setNow] = useState(0);
   useEffect(() => {
-    let raf = 0;
-    const loop = () => {
-      setNow(engine.now());
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    const id = setInterval(() => setNow(engine.now()), 1000 / FPS);
+    return () => clearInterval(id);
   }, []);
   return now;
+}
+
+/** Compasso atual (inteiro): só re-renderiza quando o compasso muda. */
+export function useBar(): number {
+  const [bar, setBar] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setBar(Math.floor(engine.now())), 1000 / FPS);
+    return () => clearInterval(id);
+  }, []);
+  return bar;
 }

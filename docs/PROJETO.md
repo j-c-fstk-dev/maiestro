@@ -454,6 +454,34 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 - *Magenta RealTime* (open weights): roda localmente mas precisa de GPU/TPU; não roda no navegador.
 - **Caminho sugerido:** depois da validação de ouvido, um protótipo "deck de textura" com Lyria (servidor: proxy WebSocket como o do LLM; cliente: AudioWorklet que toca o PCM recebido, sincronizado ao BPM do deck no ar). Fica para uma Fase 6b, se fizer sentido.
 
+### Correção — áudio picotando / mudo no drop (2026-10-26)
+
+**Relato:** "quando muda de parte da música ou quando insiro algum comando o som para de sair ou fica cortado enquanto o motor continua rodando… sempre que chega no drop, fica mudo".
+
+**Causa (medida):** o scheduler do Strudel roda na thread principal e só prepara ~0,2 s de notas à frente. Se a página trava mais que isso, ele **pula** o trecho ("skip query: too late") — silêncio, enquanto a tela segue normal. Duas coisas travavam a página:
+1. **Cada mudança reinterpretava a música inteira** (todas as seções e camadas como um texto só): 65–170 ms por mudança numa máquina rápida, crescendo a cada mudança; um comando dispara várias (recompila os limites seguintes, retornos de `forBars`, fim de `insert_sections`…). No drop, várias mudanças coincidem.
+2. **A tela inteira era redesenhada 10–60×/s** (React em modo desenvolvimento; `jsxDEV` era o maior consumidor no profiler).
+
+Simulando um processador 4× mais lento (CDP `setCPUThrottlingRate`): **56 trechos pulados** em 40 s, maior trava de **1,9 s**, quedas de volume na entrada do drop e depois de comandos.
+
+**Correções:**
+- **Música em partes + cache:** o compiler entrega `MixParts` (seções → expressões de camada, filtro e envelopes de transição); o engine interpreta **cada expressão uma vez só** e monta o pattern em JS (`stack`, `maestroArrange`). Um mute não reinterpreta nada; um teste com 6 comandos pesados fez 45 interpretações novas e 648 reaproveitadas.
+- Entre interpretações novas o engine **devolve a vez ao navegador** (`setTimeout 0`) para o scheduler não perder o prazo.
+- Transpilação sem anotações de posição (`emitMiniLocations: false`); teste de segurança do pattern reduzido a ¼ de compasso.
+- **Tela:** só relógio, progresso da seção e crossfader se atualizam com o tempo (10×/s); a lista de camadas, de compasso em compasso; log, gravações, prompt e piloto memorizados.
+- **`npm start`**: versão de produção (build + preview), com o proxy da IA funcionando — bem mais leve que `npm run dev`.
+- **Aviso de engasgo:** o app conta os trechos pulados pelo scheduler e mostra "⚠ áudio engasgou" no topo, sugerindo `/leve on`.
+- **`/leve on`:** supersaw vira serra simples, sem delay e com reverb só em acordes/voz (alivia a thread de áudio; lembrado entre sessões).
+
+**Resultado** (sequência pesada: goto drop, tom, insert build+drop, mute, transição, mood):
+
+| CPU simulada | antes | depois (`npm run dev`) | depois (`npm start`) |
+|---|---|---|---|
+| 4× mais lenta | 56 pulos (sequência mais leve) | 1 | 2 |
+| 6× mais lenta | 53 | 22 | 7 |
+
+Nenhum segundo mudo nas gravações depois da correção. O que sobra em CPUs muito lentas é o custo do próprio Strudel por nota (cria os nós de áudio na thread principal).
+
 ### Fase 7 — Rumo a produto (se fizer sentido)
 - [ ] Decidir motor (ver §15), contas, hospedagem, custos de IA, termos de uso.
 
@@ -532,6 +560,9 @@ Cada fase termina com uma **demo tocável**. Os critérios de pronto são o que 
 | 36 | 2026-10-26 | Vocais reais via samples do usuário (`public/samples`) | Não há banco livre de vocais; o usuário traz os seus |
 | 37 | 2026-10-26 | Código livre com lista de palavras proibidas + consulta de 4 compassos antes de entrar | Dá criatividade à IA sem arriscar o som nem o navegador |
 | 38 | 2026-10-26 | Lyria RealTime adiado (pesquisado) | Outra chave/conta, áudio no servidor, termos a checar; vale depois da validação de ouvido |
+| 39 | 2026-10-26 | Engine recebe a música em partes (`MixParts`) e mantém cache de expressões | Reinterpretar a música inteira a cada mudança travava a página e o scheduler pulava notas |
+| 40 | 2026-10-26 | UI: só os componentes de relógio se atualizam com o tempo | Re-render da tela inteira competia com o scheduler de áudio |
+| 41 | 2026-10-26 | `npm start` (produção) recomendado para tocar; `/leve on` para máquinas modestas | React de desenvolvimento é bem mais pesado |
 
 ---
 

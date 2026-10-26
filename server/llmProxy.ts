@@ -49,12 +49,20 @@ export function llmProxy(env: LlmEnv): Plugin {
   return {
     name: 'maestro-llm-proxy',
     configureServer(server) {
-      server.middlewares.use('/api/llm', (req, res) => {
-        handle(env, req, res).catch((err) =>
-          send(res, err instanceof LlmError ? err.status : 500, { error: String(err?.message ?? err) }),
-        );
-      });
+      server.middlewares.use('/api/llm', middleware(env));
     },
+    // `npm start` (build + preview): versão otimizada, bem mais leve para o áudio
+    configurePreviewServer(server) {
+      server.middlewares.use('/api/llm', middleware(env));
+    },
+  };
+}
+
+function middleware(env: LlmEnv) {
+  return (req: IncomingMessage, res: ServerResponse) => {
+    handle(env, req, res).catch((err) =>
+      send(res, err instanceof LlmError ? err.status : 500, { error: String(err?.message ?? err) }),
+    );
   };
 }
 

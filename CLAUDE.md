@@ -11,5 +11,6 @@ Regras rápidas:
 - A chave do LLM fica no `.env` do proxy (`server/`), nunca no navegador.
 - Decisões novas entram na seção ADR do `docs/PROJETO.md`.
 
-Comandos: `npm run dev` · `npm test` · `npm run typecheck`.
+Comandos: `npm start` (tocar, versão otimizada) · `npm run dev` · `npm test` · `npm run typecheck`.
+Desempenho: o scheduler do Strudel roda na thread principal; nada pode travar a página >~150 ms (ver "Correção — áudio picotando" no PROJETO.md).
 Fluxo: comando/IA → ops (`src/song/ops.ts`) → `Timeline.schedule` (`src/scheduler`) → `compile` (`src/compiler`) → `StrudelEngine.schedule` (`src/engine`).

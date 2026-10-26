@@ -40,6 +40,8 @@ interface UiState {
   /** uso da IA pelos pedidos do usuário */
   ai: { calls: number; tokens: number };
   showHelp: boolean;
+  /** modo leve e engasgos do áudio (scheduler do Strudel pulando trechos) */
+  perf: { light: boolean; skips: number; recentSkip: boolean };
   /** gravação em andamento */
   rec: { seconds: number; bytes: number; peak: number } | null;
   recordings: Recording[];
@@ -81,6 +83,7 @@ export const useUi = create<UiState>(() => ({
   auto: { autonomy: 0, useAi: true, stats: { aiMoves: 0, localMoves: 0, aiTokens: 0, rotations: 0 }, busy: false },
   ai: { calls: 0, tokens: 0 },
   showHelp: false,
+  perf: { light: false, skips: 0, recentSkip: false },
   rec: null,
   recordings: [],
 }));
@@ -125,6 +128,9 @@ setInterval(() => {
   void autopilot.tick().catch((err) => log(`erro no piloto automático: ${(err as Error).message}`, 'err'));
   if (autopilot.busy !== was) syncAuto();
 }, 100);
+
+// para inspeção no console e testes de desempenho
+Object.assign(window, { __maestro: { engine, timeline } });
 
 export function log(text: string, kind: LogKind = 'info') {
   const bar = engine.isPlaying ? `c${Math.max(0, Math.floor(engine.now()))} ` : '';
@@ -215,6 +221,8 @@ export async function run(input: string) {
         log(a ? `piloto automático em ${a}%: ${tierLabel(a)}${autopilot.useAi ? '' : ' (sem IA)'}` : 'piloto automático desligado', 'ok');
         return;
       }
+      case 'light':
+        return setLight(cmd.on);
       case 'scene':
         return scene(cmd.action, cmd.name, cmd.deck);
       case 'target':
@@ -324,6 +332,42 @@ const WARN_EVERY_SEC = 10 * 60;
 function session(e: Parameters<SessionLog['add']>[0]) {
   sessionLog?.add(e);
 }
+
+const LIGHT_KEY = 'maestro.light';
+
+export async function setLight(on: boolean) {
+  await timeline.setOptions({ light: on });
+  useUi.setState((s) => ({ perf: { ...s.perf, light: on } }));
+  try {
+    localStorage.setItem(LIGHT_KEY, on ? '1' : '0');
+  } catch {
+    // sem armazenamento: só não lembra na próxima vez
+  }
+  log(on ? 'modo leve ligado: supersaw vira serra simples, sem delay e com menos reverb (a partir do próximo compasso)' : 'modo leve desligado', 'ok');
+}
+
+// lembra o modo leve entre sessões
+try {
+  if (localStorage.getItem(LIGHT_KEY) === '1') {
+    void timeline.setOptions({ light: true });
+    useUi.setState((s) => ({ perf: { ...s.perf, light: true } }));
+  }
+} catch {
+  // ignora
+}
+
+// engasgos: o scheduler do Strudel pulou trechos por a página estar ocupada demais
+let warnedSkips = 0;
+setInterval(() => {
+  const { skips, lastSkipAt } = engine.stats;
+  const recentSkip = skips > 0 && performance.now() - lastSkipAt < 10_000;
+  const perf = useUi.getState().perf;
+  if (perf.skips !== skips || perf.recentSkip !== recentSkip) useUi.setState({ perf: { ...perf, skips, recentSkip } });
+  if (recentSkip && skips - warnedSkips >= 5 && !perf.light) {
+    warnedSkips = skips;
+    log('o áudio está engasgando (o navegador não está dando conta). Tente /leve on, feche outras abas ou use o Chrome.', 'warn');
+  }
+}, 1000);
 
 export function toggleHelp(show?: boolean) {
   useUi.setState((s) => ({ showHelp: show ?? !s.showHelp }));
